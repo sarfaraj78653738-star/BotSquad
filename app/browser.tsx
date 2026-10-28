@@ -21,7 +21,7 @@ export default function BrowserScreen() {
         <View style={{ width: 84 }} />
       </View>
       <View style={styles.body}>
-      <Text style={styles.sub}>Open a public page inside the app. No sign-in, no password saving, no paywall bypass.</Text>
+
       <Field label="URL" onChangeText={setUrl} placeholder="https://example.com" value={url} />
       <Button title="Open page" onPress={() => setCurrent(url.startsWith('http') ? url : `https://${url}`)} />
       <View style={styles.web}>
