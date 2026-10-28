@@ -6,9 +6,11 @@ import { Button, Card, Field } from '../../src/components/ui';
 import { deleteMemory, getBot, listMemory, saveBot } from '../../src/lib/db';
 import { AVATAR_COLORS, AVATAR_ICONS } from '../../src/lib/tokens';
 import { Bot, MemoryNote, newId, nowIso } from '../../src/lib/types';
-import { tokens } from '../../src/lib/tokens';
+import { useTokens } from '../../src/lib/tokens';
 
 export default function BotEditScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const isNew = id === 'new';
@@ -73,7 +75,7 @@ export default function BotEditScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
