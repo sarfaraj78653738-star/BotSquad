@@ -4,17 +4,19 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'r
 import { Feather } from '@expo/vector-icons';
 import { Avatar, Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
-import { AttachButton } from '../src/components/AttachButton';
-import { VoiceButton } from '../src/components/VoiceButton';
+import { ComposerBar } from '../src/components/ComposerBar';
 import { createGroupThread, deleteGroupThread, listBots, listGroupMembers, listGroupMessages, listGroupThreads, setGroupMessageApproval } from '../src/lib/db';
 import { runGroupMessage } from '../src/lib/group';
+import { saveArtifactFromReply } from '../src/lib/projects';
 import { Bot, GroupMessage, GroupThread } from '../src/lib/types';
-import { tokens } from '../src/lib/tokens';
+import { useTokens } from '../src/lib/tokens';
 
 // Group tab: pick 2+ bots, send one message, each bot replies in turn with
 // its own task/personality and its own provider/model, then a summary.
 // A bot with no key does NOT fake a reply — it gets a clear status note.
 export default function GroupScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
   const [bots, setBots] = useState<Bot[]>([]);
   const [threads, setThreads] = useState<GroupThread[]>([]);
@@ -100,11 +102,26 @@ export default function GroupScreen() {
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.header}>
-        <MenuButton />
-        <Text style={styles.headerTitle}>Group</Text>
-        <View style={{ width: 34 }} />
-      </View>
+      {selected ? (
+        <View style={styles.header}>
+          <Pressable
+            accessibilityLabel="Back to groups"
+            onPress={() => { setSelected(null); refresh(); }}
+            style={styles.backButton}
+          >
+            <Feather name="chevron-left" size={22} color={tokens.text} />
+            <Text style={styles.backText}>Back</Text>
+          </Pressable>
+          <Text style={styles.headerTitle} numberOfLines={1}>{selected.title}</Text>
+          <View style={{ width: 68 }} />
+        </View>
+      ) : (
+        <View style={styles.header}>
+          <MenuButton />
+          <Text style={styles.headerTitle}>Group</Text>
+          <View style={{ width: 34 }} />
+        </View>
+      )}
 
       {!selected && (
         <View style={styles.body}>
@@ -147,11 +164,6 @@ export default function GroupScreen() {
 
       {selected && (
         <View style={styles.body}>
-          <Pressable onPress={() => { setSelected(null); refresh(); }} style={styles.backRow}>
-            <Feather name="chevron-left" size={20} color={tokens.text} />
-            <Text style={styles.backText}>Back to groups</Text>
-          </Pressable>
-          <Text style={styles.title}>{selected.title}</Text>
           <Text style={styles.sub}>Bots: {members.map((m) => m.name).join(', ') || 'none'}</Text>
           <FlatList
             data={messages}
@@ -168,6 +180,14 @@ export default function GroupScreen() {
                 <View style={styles.assistantRow}>
                   <Text style={styles.botLabel}>{item.role === 'system_note' ? 'Note' : memberName(item.botId)}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
                   <Text style={styles.assistantText}>{item.text}</Text>
+                  {item.role === 'assistant' && (
+                    <Pressable
+                      accessibilityLabel="Save as artifact"
+                      onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert('Saved', 'Saved to Artifacts.'); }}
+                    >
+                      <Text style={styles.saveArtifact}>Save as artifact</Text>
+                    </Pressable>
+                  )}
                   {item.role === 'assistant' && item.approvalState === 'draft' && (
                     <View style={styles.actions}>
                       <Button title="Approve draft" onPress={async () => { await setGroupMessageApproval(item.id, 'approved'); setMessages(await listGroupMessages(selected.id)); }} />
@@ -180,35 +200,32 @@ export default function GroupScreen() {
           />
           {loading && <LoadingRow label={workingBot ? `${workingBot} is replying…` : 'Group is working…'} />}
           {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
-          <View style={styles.composer}>
-            <AttachButton disabled={loading} onAttachment={(att) => { void handleAttachment(att); }} />
-            <TextInput accessibilityLabel="Group message" onChangeText={setInput} placeholder="Message the whole group…" placeholderTextColor={tokens.textMuted} style={styles.composerInput} value={input} />
-            <VoiceButton
-              disabled={loading}
-              onPartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
-              onFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote('Voice transcript inserted — check it, then tap Send. Nothing was sent automatically.'); }}
-              onError={(m) => { voiceBase.current = ''; setVoiceNote(m); }}
-            />
-            <Pressable accessibilityLabel="Send to group" disabled={loading} onPress={() => { void send(); }} style={[styles.sendButton, loading && styles.sendDisabled]}>
-              <Feather name="send" size={18} color={tokens.onAccent} />
-            </Pressable>
-          </View>
+          <ComposerBar
+            input={input}
+            onChangeText={setInput}
+            placeholder="Message the whole group…"
+            loading={loading}
+            onSend={() => { void send(); }}
+            onAttachment={(att) => { void handleAttachment(att); }}
+            onVoicePartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
+            onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote('Voice transcript inserted — check it, then tap Send. Nothing was sent automatically.'); }}
+            onVoiceError={(m) => { voiceBase.current = ''; setVoiceNote(m); }}
+          />
         </View>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
-  backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
+  backButton: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
-  composer: { alignItems: 'center', flexDirection: 'row', gap: 8, marginTop: 8 },
-  composerInput: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.lg, borderWidth: 1, color: tokens.text, flex: 1, fontSize: tokens.font.md, height: 48, paddingHorizontal: 14, paddingVertical: 12 },
+  saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700', marginTop: 8 },
   deleteText: { color: tokens.danger, fontSize: tokens.font.sm, fontWeight: '700' },
   threadRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   threadTitle: { flex: 1 },
@@ -219,10 +236,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, color: tokens.text, fontSize: tokens.font.md, marginBottom: 12, padding: 14 },
   name: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
   row: { alignItems: 'center', flexDirection: 'row', gap: 10 },
-  sendButton: { alignItems: 'center', backgroundColor: tokens.accent, borderRadius: 999, height: 48, justifyContent: 'center', width: 48 },
-  sendDisabled: { opacity: 0.5 },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: 8 },
-  title: { color: tokens.text, fontSize: tokens.font.xl, fontWeight: '800', marginBottom: 4, marginTop: 8 },
   userBubble: { backgroundColor: tokens.accent, borderRadius: tokens.radius.lg, maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10 },
   userRow: { alignItems: 'flex-end', marginBottom: 16 },
   userText: { color: tokens.onAccent, fontSize: tokens.font.md, lineHeight: 24 },
