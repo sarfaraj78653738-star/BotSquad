@@ -13,7 +13,7 @@ export default function BotEditScreen() {
   const router = useRouter();
   const isNew = id === 'new';
   const [bot, setBot] = useState<Bot>({
-    id: newId(), name: '', role: '', avatarColor: AVATAR_COLORS[0] ?? '#2563EB', avatarIcon: AVATAR_ICONS[0] ?? '◆',
+    id: newId(), name: '', role: '', avatarColor: AVATAR_COLORS[0] ?? '#E7DCC8', avatarIcon: AVATAR_ICONS[0] ?? '◆',
     task: '', personality: '', instructions: '', boundaries: 'Never send, publish, buy, or delete anything externally. Drafts need user approval.',
     provider: 'openai-compatible', model: 'gpt-4o-mini', isPinned: 0, createdAt: nowIso(), updatedAt: nowIso(),
   });
@@ -46,7 +46,7 @@ export default function BotEditScreen() {
         <View style={{ width: 68 }} />
       </View>
     <ScrollView style={styles.body}>
-      <Text style={styles.sub}>Give the bot one specific task. That task is its personality — it will behave like that task.</Text>
+      <Text style={styles.sub}>One task = its personality.</Text>
       <Field label="Name" onChangeText={(v) => setBot({ ...bot, name: v })} value={bot.name} />
       <Field label="Role" onChangeText={(v) => setBot({ ...bot, role: v })} value={bot.role} />
       <Field label="Task (what it owns)" multiline onChangeText={(v) => setBot({ ...bot, task: v })} value={bot.task} />
@@ -57,12 +57,12 @@ export default function BotEditScreen() {
       {!isNew && (
         <View style={{ marginTop: 24 }}>
           <Text style={styles.title}>Memory notes (auto-learned)</Text>
-          <Text style={styles.sub}>Visible, editable by deleting, and fed into the next chat. Boundaries always win over these notes.</Text>
+          <Text style={styles.sub}>Delete a note to remove it. Boundaries always win.</Text>
           {memory.length === 0 && <Text style={styles.sub}>No memory notes yet.</Text>}
           {memory.map((m) => (
             <Card key={m.id}>
               <Text>{m.note}</Text>
-              <Text style={styles.sub}>{m.source} · {m.createdAt}</Text>
+              <Text style={styles.sub}>{m.source}, {m.createdAt}</Text>
               <Button title="Delete note" variant="danger" onPress={async () => { await deleteMemory(m.id); setMemory(await listMemory(bot.id)); }} />
             </Card>
           ))}
