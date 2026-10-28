@@ -5,8 +5,11 @@ import { Feather } from '@expo/vector-icons';
 import { Avatar, Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { ComposerBar } from '../src/components/ComposerBar';
+import LiveBrowserPanel, { LiveBrowserHandle } from '../src/components/LiveBrowserPanel';
+import { parseBrowserCommands, parseBrowserRequest } from '../src/lib/liveBrowser';
 import { createGroupThread, deleteGroupThread, listBots, listGroupMembers, listGroupMessages, listGroupThreads, setGroupMessageApproval } from '../src/lib/db';
 import { runGroupMessage } from '../src/lib/group';
+import { isRawErrorText } from '../src/lib/errors';
 import { saveArtifactFromReply } from '../src/lib/projects';
 import { Bot, GroupMessage, GroupThread } from '../src/lib/types';
 import { useTokens } from '../src/lib/tokens';
@@ -29,9 +32,18 @@ export default function GroupScreen() {
   const [loading, setLoading] = useState(false);
   const [workingBot, setWorkingBot] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // A failed group run shows ONLY a number ("Error 503") plus Retry —
+  // never a sentence, never raw provider text.
+  const [failedCode, setFailedCode] = useState<number | null>(null);
+  const [failedText, setFailedText] = useState<string | null>(null);
   const [voiceNote, setVoiceNote] = useState('');
   const voiceBase = useRef('');
   const appliedThreadId = useRef<string | null>(null);
+  // Live in-chat browser for the group thread, same rules as ChatView:
+  // user intent opens it, bot [BROWSER ...] commands drive it, tap/type
+  // wait for approval, login steps hand control to the user.
+  const browserRef = useRef<LiveBrowserHandle>(null);
+  const [browserExpanded, setBrowserExpanded] = useState(false);
 
   const refresh = useCallback(() => {
     listBots().then(setBots).catch(() => {});
@@ -67,18 +79,30 @@ export default function GroupScreen() {
     await openThread(t);
   }
 
-  async function send(textOverride?: string) {
+  async function send(textOverride?: string, reuseUser = false) {
     const raw = textOverride ?? input;
     if (!selected || !raw.trim() || loading) return;
-    setError('');
+    const browserRequest = parseBrowserRequest(raw.trim());
+    if (browserRequest.open) browserRef.current?.open(browserRequest.url);
+    setFailedCode(null);
+    setFailedText(null);
     setLoading(true);
     const text = raw;
     if (!textOverride) setInput('');
     try {
-      await runGroupMessage(selected.id, members, text, setWorkingBot);
-      setMessages(await listGroupMessages(selected.id));
+      const prevIds = new Set(messages.map((m) => m.id));
+      await runGroupMessage(selected.id, members, text, setWorkingBot, reuseUser);
+      const updated = await listGroupMessages(selected.id);
+      setMessages(updated);
+      // Bot browser commands in the new replies drive the panel.
+      for (const m of updated) {
+        if (!prevIds.has(m.id) && m.role === 'assistant') {
+          for (const action of parseBrowserCommands(m.text)) browserRef.current?.requestAction(action);
+        }
+      }
     } catch {
-      setError('Group run failed. Your message was not lost — check the thread and try again.');
+      setFailedCode(503);
+      setFailedText(text);
     } finally {
       setLoading(false);
       setWorkingBot(null);
@@ -165,7 +189,7 @@ export default function GroupScreen() {
       {selected && (
         <View style={styles.body}>
           <Text style={styles.sub}>Bots: {members.map((m) => m.name).join(', ') || 'none'}</Text>
-          <FlatList
+          {browserExpanded ? null : <FlatList
             data={messages}
             keyExtractor={(m) => m.id}
             renderItem={({ item }) => {
@@ -176,9 +200,19 @@ export default function GroupScreen() {
                   </View>
                 );
               }
+              // A legacy raw error saved in history renders as a number
+              // only, exactly like a fresh failure — history is not deleted.
+              if (isRawErrorText(item.text)) {
+                return (
+                  <View style={styles.assistantRow}>
+                    <Text style={styles.botLabel}>{item.botId ? memberName(item.botId) : 'Note'}</Text>
+                    <Text style={styles.failedText}>Error 503</Text>
+                  </View>
+                );
+              }
               return (
                 <View style={styles.assistantRow}>
-                  <Text style={styles.botLabel}>{item.role === 'system_note' ? 'Note' : memberName(item.botId)}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
+                  <Text style={styles.botLabel}>{item.role === 'system_note' && !item.botId ? 'Note' : memberName(item.botId)}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
                   <Text style={styles.assistantText}>{item.text}</Text>
                   {item.role === 'assistant' && (
                     <Pressable
@@ -197,9 +231,22 @@ export default function GroupScreen() {
                 </View>
               );
             }}
-          />
+          />}
           {loading && <LoadingRow label={workingBot ? `${workingBot} is replying…` : 'Group is working…'} />}
           {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
+          {failedCode !== null && failedText ? (
+            <View style={styles.failedRow}>
+              <Text style={styles.failedText}>Error {failedCode}</Text>
+              <Pressable
+                accessibilityLabel="Retry"
+                onPress={() => { const t = failedText; setFailedCode(null); setFailedText(null); void send(t, true); }}
+                style={styles.retryButton}
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          <LiveBrowserPanel ref={browserRef} botName="Group" onExpandedChange={setBrowserExpanded} />
           <ComposerBar
             input={input}
             onChangeText={setInput}
@@ -225,6 +272,10 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
+  failedRow: { alignItems: 'center', borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
+  failedText: { color: tokens.danger, fontSize: tokens.font.md, fontWeight: '700' },
+  retryButton: { backgroundColor: tokens.accent, borderRadius: tokens.radius.md, paddingHorizontal: 16, paddingVertical: 8 },
+  retryText: { color: tokens.onAccent, fontSize: tokens.font.md, fontWeight: '700' },
   saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700', marginTop: 8 },
   deleteText: { color: tokens.danger, fontSize: tokens.font.sm, fontWeight: '700' },
   threadRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
