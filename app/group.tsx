@@ -108,7 +108,7 @@ export default function GroupScreen() {
 
       {!selected && (
         <View style={styles.body}>
-          <Text style={styles.sub}>One message, every selected bot replies in turn, then a summary.</Text>
+          <Text style={styles.sub}>Bots reply in turn, then a summary.</Text>
           {error ? <Card><Text style={{ color: tokens.danger }}>{error}</Text></Card> : null}
           <Text style={styles.h}>New group</Text>
           <TextInput accessibilityLabel="Group title" onChangeText={setNewTitle} placeholder="Group title (optional)" placeholderTextColor={tokens.textMuted} style={styles.input} value={newTitle} />
@@ -118,7 +118,7 @@ export default function GroupScreen() {
                 <View style={styles.row}>
                   <Avatar color={b.avatarColor} label={b.name} size={36} />
                   <CheckBox selected={picked.includes(b.id)} />
-                  <Text style={styles.name}>{b.name} — {b.role}</Text>
+                  <Text style={styles.name}>{b.name}, {b.role}</Text>
                 </View>
               </Card>
             </Pressable>
@@ -166,7 +166,7 @@ export default function GroupScreen() {
               }
               return (
                 <View style={styles.assistantRow}>
-                  <Text style={styles.botLabel}>{item.role === 'system_note' ? 'Note' : memberName(item.botId)}{item.approvalState ? ` · ${item.approvalState}` : ''}</Text>
+                  <Text style={styles.botLabel}>{item.role === 'system_note' ? 'Note' : memberName(item.botId)}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
                   <Text style={styles.assistantText}>{item.text}</Text>
                   {item.role === 'assistant' && item.approvalState === 'draft' && (
                     <View style={styles.actions}>
