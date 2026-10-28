@@ -60,6 +60,18 @@ jobs:
         # so it is appended here after prebuild, before Gradle runs.
         run: echo "android.enableJetifier=true" >> android/gradle.properties
 
+      - name: Increase Gradle heap
+        # Run #3 got past the manifest merger, then failed at
+        # :app:checkDebugAarMetadata with
+        # "JetifierTransform: Java heap space" on react-android
+        # 0.76.5-debug.aar. Expo's generated gradle.properties sets
+        # only -Xmx2048m, which is too small for Jetifier on this
+        # large AAR, so raise it to 4 GB before Gradle runs.
+        # This must run after prebuild, which regenerates the file.
+        run: |
+          sed -i 's/-Xmx2048m/-Xmx4096m/; s/-XX:MaxMetaspaceSize=512m/-XX:MaxMetaspaceSize=1024m/' android/gradle.properties
+          grep org.gradle.jvmargs android/gradle.properties
+
       - name: Build debug APK
         run: |
           cd android
