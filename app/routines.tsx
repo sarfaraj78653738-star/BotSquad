@@ -5,11 +5,13 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
 import { addMessage, getBot, getOrCreateChat, listBots, listRoutines, listSkills, markRoutineRun, saveRoutine, setRoutineStatus } from '../src/lib/db';
 import { Bot, Routine, Skill, newId, nowIso } from '../src/lib/types';
-import { tokens } from '../src/lib/tokens';
+import { useTokens } from '../src/lib/tokens';
 
 // Reached from Settings. A routine runs as a DRAFT when you open the
 // app — never autonomously, never externally.
 export default function RoutinesScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const router = useRouter();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -93,7 +95,7 @@ export default function RoutinesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
