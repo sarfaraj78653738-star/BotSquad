@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { getUniversal, setUniversal, UniversalConfig } from '../lib/universal';
 import { useTokens } from '../lib/tokens';
@@ -25,6 +26,7 @@ const MODELS_BY_PROVIDER: Record<UniversalConfig['provider'], { id: string; desc
 
 export function ModelPicker() {
   const tokens = useTokens();
+  const insets = useSafeAreaInsets();
   const styles = getStyles(tokens);
   const [model, setModel] = useState('gpt-4o-mini');
   const [provider, setProvider] = useState<UniversalConfig['provider']>('openai-compatible');
@@ -56,7 +58,7 @@ export function ModelPicker() {
       </Pressable>
       <Modal animationType="slide" onRequestClose={() => setOpen(false)} transparent visible={open}>
         <Pressable accessibilityLabel="Close model picker" onPress={() => setOpen(false)} style={styles.backdrop} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 28 }]}>
           <View style={styles.sheetHead}>
             <Text style={styles.sheetTitle}>Select model</Text>
             <Pressable accessibilityLabel="Close model picker" onPress={() => setOpen(false)} style={styles.closeButton}>
