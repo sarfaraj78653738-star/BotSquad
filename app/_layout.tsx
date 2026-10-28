@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { getDb } from '../src/lib/db';
 import { BOT_TEMPLATES, nowIso, newId } from '../src/lib/types';
 import { listBots, saveBot } from '../src/lib/db';
+import { DrawerProvider } from '../src/components/Drawer';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -17,5 +18,9 @@ export default function RootLayout() {
       }
     })().catch(() => {});
   }, []);
-  return <Stack screenOptions={{ headerBackTitle: 'Back' }} />;
+  return (
+    <DrawerProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </DrawerProvider>
+  );
 }
