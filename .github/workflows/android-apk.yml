@@ -50,6 +50,16 @@ jobs:
       - name: Prebuild Android
         run: CI=1 npx expo prebuild --platform android
 
+      - name: Enable Jetifier
+        # @react-native-voice/voice still depends on the old
+        # com.android.support libraries (appcompat-v7, which pulls in
+        # support versionedparcelable 28.0.0). Without Jetifier that
+        # clashes with androidx versionedparcelable 1.1.1 and
+        # :app:processDebugMainManifest fails with a manifest-merger
+        # error. The generated gradle.properties does not set this,
+        # so it is appended here after prebuild, before Gradle runs.
+        run: echo "android.enableJetifier=true" >> android/gradle.properties
+
       - name: Build debug APK
         run: |
           cd android
