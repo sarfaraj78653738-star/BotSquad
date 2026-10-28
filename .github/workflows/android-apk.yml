@@ -84,14 +84,40 @@ jobs:
           sed -i 's/-Xmx2048m/-Xmx4096m/; s/-XX:MaxMetaspaceSize=512m/-XX:MaxMetaspaceSize=1024m/' android/gradle.properties
           grep org.gradle.jvmargs android/gradle.properties
 
-      - name: Build debug APK
+      - name: Generate debug keystore if missing
+        # The release build below is signed with the debug signing
+        # config, whose keystore is not committed to the repo.
+        # Generate the standard debug keystore so the release APK
+        # is installable. NOTE: each CI run is a fresh runner, so
+        # this keystore (and the APK signature) changes per build —
+        # uninstall the previous TeamBots APK before installing a
+        # new one, or Android will refuse it as a signature mismatch.
+        run: |
+          if [ ! -f android/app/debug.keystore ]; then
+            keytool -genkey -v -keystore android/app/debug.keystore \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build release APK
+        # NOT assembleDebug: debug APKs skip JS bundling and load
+        # the bundle from a Metro dev server at localhost:8081, so
+        # a debug APK installed on a phone with no Metro running
+        # shows "Could not connect to development server" /
+        # "Unable to load script". A release APK bundles the JS
+        # inside the APK and runs standalone, which is what a
+        # GitHub-distributed APK needs. The release build type in
+        # this template is signed with the debug keystore (see the
+        # step above), so it stays installable without a real
+        # release keystore.
         run: |
           cd android
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: teambots-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: teambots-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
