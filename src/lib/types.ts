@@ -133,10 +133,10 @@ export const PROVIDERS: { id: ProviderId; label: string; models: string[]; baseU
   {
     id: 'openai-compatible',
     label: 'OpenAI-compatible (OpenAI, Groq, OpenRouter, DeepSeek, xAI)',
-    models: ['gpt-4o-mini', 'llama-3.3-70b-versatile', 'deepseek-chat', 'grok-4'],
+    models: ['gpt-4o-mini', 'llama-3.3-70b-versatile', 'deepseek-chat'],
     baseUrl: 'https://api.openai.com/v1/chat/completions',
   },
-  { id: 'anthropic', label: 'Anthropic', models: ['claude-sonnet-4-5'], baseUrl: 'https://api.anthropic.com/v1/messages' },
+  { id: 'anthropic', label: 'Anthropic', models: [], baseUrl: 'https://api.anthropic.com/v1/messages' },
   { id: 'gemini', label: 'Google Gemini', models: ['gemini-2.0-flash'], baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models' },
 ];
 
