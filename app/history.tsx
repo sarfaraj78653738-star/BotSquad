@@ -5,7 +5,7 @@ import { Avatar, Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { listBots, listChats, listGroupMessages, listGroupThreads, listMessages } from '../src/lib/db';
 import { Bot, Chat, GroupThread } from '../src/lib/types';
-import { tokens } from '../src/lib/tokens';
+import { useTokens } from '../src/lib/tokens';
 
 type BotChatRow = { chat: Chat; bot: Bot | null; snippet: string };
 type GroupRow = { thread: GroupThread; snippet: string };
@@ -20,6 +20,8 @@ type GroupRow = { thread: GroupThread; snippet: string };
 // parameter.
 type Tab = 'main' | 'bots' | 'group';
 export default function HistoryScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const router = useRouter();
   const [universalSnippet, setUniversalSnippet] = useState('No messages yet.');
   const [botRows, setBotRows] = useState<BotChatRow[]>([]);
@@ -116,7 +118,7 @@ export default function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   body: { flex: 1, padding: tokens.space.md },
   h: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 8, marginTop: 16 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
