@@ -5,6 +5,7 @@ import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
 import { addMemory, addMessage, getBot, getOrCreateChat, getSetting, listBotSkillIds, listBots, listMemory, listMessages, listSkills, saveSkill, setMessageApproval } from '../lib/db';
+import { getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
 import { saveArtifactFromReply } from '../lib/projects';
@@ -39,7 +40,7 @@ function makeUniversalBot(): Bot {
   };
 }
 
-export function ChatView({ botId, universal, topBar }: { botId?: string; universal?: boolean; topBar: (bot: Bot | null) => React.ReactNode }) {
+export function ChatView({ botId, universal, universalChatId, topBar }: { botId?: string; universal?: boolean; universalChatId?: string; topBar: (bot: Bot | null) => React.ReactNode }) {
   const tokens = useTokens();
   const styles = getStyles(tokens);
   const [bot, setBot] = useState<Bot | null>(() => (universal ? makeUniversalBot() : null));
@@ -66,12 +67,15 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
       setFailedText(null);
       setAdsRemoved((await getSetting('premium_ads_removed')) === '1');
       if (universal) {
-        // Universal chat needs no bot and no chats-table row: it uses
-        // the fixed chat id below. addMessage's chats-table updated_at
-        // update simply affects 0 rows, which is fine.
+        // Universal chat needs no bot and no chats-table row. The open
+        // thread is the stored current id (or the thread History asked
+        // for, which then becomes current); addMessage's chats-table
+        // updated_at update simply affects 0 rows, which is fine.
         setBot(makeUniversalBot());
-        setChatId('universal-chat');
-        setMessages(await listMessages('universal-chat'));
+        const id = universalChatId ?? (await getUniversalChatId());
+        if (universalChatId) await setUniversalChatId(universalChatId);
+        setChatId(id);
+        setMessages(await listMessages(id));
         return;
       }
       if (!botId) return;
@@ -83,7 +87,23 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
         setMessages(await listMessages(chat.id));
       }
     })().catch(() => {});
-  }, [botId, universal]);
+  }, [botId, universal, universalChatId]);
+
+  // New chat (Main Chat only): the current thread is NOT deleted — it
+  // stays in History and can be reopened. A fresh thread starts empty,
+  // which is also what resets the context window: without it, the
+  // oldest messages would just keep being dropped silently once the
+  // window fills (see capHistory). Tapping on an empty thread does
+  // nothing, so empty threads never pile up in History.
+  async function newChat() {
+    if (!universal || messages.length === 0) return;
+    const id = `universal-${newId()}`;
+    await setUniversalChatId(id);
+    setChatId(id);
+    setMessages([]);
+    setFailedCode(null);
+    setFailedText(null);
+  }
 
   // reuseUser: a Retry resends the failed user text WITHOUT adding a
   // second copy of the user's bubble to the chat.
@@ -161,6 +181,13 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
   return (
     <View style={styles.wrap}>
       {topBar(bot)}
+      {universal ? (
+        <View style={styles.newChatRow}>
+          <Pressable accessibilityLabel="Start a new chat" onPress={() => { void newChat(); }} style={styles.newChatButton}>
+            <Text style={styles.newChatText}>+ New chat</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <AdSlot visible={!adsRemoved && loading} />
       {browserExpanded ? null : <FlatList
         data={messages}
@@ -258,6 +285,9 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   list: { flex: 1 },
   listContent: { padding: tokens.space.md },
   msgActions: { alignItems: 'center', flexDirection: 'row', gap: 16, marginTop: 8 },
+  newChatButton: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
+  newChatRow: { alignItems: 'flex-end', paddingHorizontal: tokens.space.md, paddingTop: 2 },
+  newChatText: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 8 },
   noteRow: { alignItems: 'center', marginBottom: 16 },
   noteText: { color: tokens.textMuted, fontSize: tokens.font.sm, textAlign: 'center' },
