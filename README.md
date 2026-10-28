@@ -45,7 +45,7 @@ the device secure store and are sent only to the provider you chose.
 
 ## Run it (on a real machine with Android Studio / Expo Go)
 ```bash
-cd ~/workspace/grok-bot-replica/app
+cd app
 npm install   # if npm fails with EPERM chown in this sandbox, use: bun install
 npx tsc --noEmit
 npx expo start
