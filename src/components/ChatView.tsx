@@ -172,7 +172,7 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
           }
           return (
             <View style={styles.assistantRow}>
-              <Text style={styles.botLabel}>{bot.name}{item.approvalState ? ` · ${item.approvalState}` : ''}</Text>
+              <Text style={styles.botLabel}>{bot.name}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
               <Text style={styles.assistantText}>{item.text}</Text>
               {item.approvalState === 'draft' && (
                 <View style={styles.approval}>
@@ -204,7 +204,6 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
           <View style={{ height: 12 }} />
           <Field label="Bot browse — public page URL" onChangeText={setBrowseUrl} placeholder="https://example.com/article" value={browseUrl} />
           <Button title="Browse with this bot" variant="secondary" disabled={loading} onPress={browse} />
-          <Text style={styles.note}>Bot browsing is public pages only. No login, no paywall bypass, no password saving.</Text>
           {workLog.length > 0 && (
             <View style={{ marginTop: 12 }}>
               <Text style={styles.botLabel}>Work log</Text>
