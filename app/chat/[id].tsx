@@ -2,11 +2,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { ChatView } from '../../src/components/ChatView';
-import { tokens } from '../../src/lib/tokens';
+import { useTokens } from '../../src/lib/tokens';
 
 // A single bot's chat, reached from Bots or History. It reuses the same
 // ChatView as Main Chat; only its header differs (back button + name).
 export default function BotChatScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   if (!id) return <View style={styles.wrap}><Text style={styles.sub}>Loading chat…</Text></View>;
@@ -31,7 +33,7 @@ export default function BotChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backButton: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
