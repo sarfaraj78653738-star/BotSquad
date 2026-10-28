@@ -1,9 +1,11 @@
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Avatar, Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
+import { AttachButton } from '../src/components/AttachButton';
+import { VoiceButton } from '../src/components/VoiceButton';
 import { createGroupThread, deleteGroupThread, listBots, listGroupMembers, listGroupMessages, listGroupThreads, setGroupMessageApproval } from '../src/lib/db';
 import { runGroupMessage } from '../src/lib/group';
 import { Bot, GroupMessage, GroupThread } from '../src/lib/types';
@@ -25,6 +27,8 @@ export default function GroupScreen() {
   const [loading, setLoading] = useState(false);
   const [workingBot, setWorkingBot] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [voiceNote, setVoiceNote] = useState('');
+  const voiceBase = useRef('');
   const appliedThreadId = useRef<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -61,12 +65,13 @@ export default function GroupScreen() {
     await openThread(t);
   }
 
-  async function send() {
-    if (!selected || !input.trim() || loading) return;
+  async function send(textOverride?: string) {
+    const raw = textOverride ?? input;
+    if (!selected || !raw.trim() || loading) return;
     setError('');
     setLoading(true);
-    const text = input;
-    setInput('');
+    const text = raw;
+    if (!textOverride) setInput('');
     try {
       await runGroupMessage(selected.id, members, text, setWorkingBot);
       setMessages(await listGroupMessages(selected.id));
@@ -76,6 +81,19 @@ export default function GroupScreen() {
       setLoading(false);
       setWorkingBot(null);
     }
+  }
+
+  function formatSize(size: number | null): string {
+    if (size === null) return 'unknown size';
+    if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+    return `${size} B`;
+  }
+
+  // Attachment note only: the file is never uploaded or read. Bots reply
+  // to this note honestly, not to fake file contents.
+  async function handleAttachment(att: { name: string; size: number | null; kind: 'photo' | 'document' }) {
+    await send(`[Attachment: ${att.name} (${formatSize(att.size)})] — the file itself was not uploaded or read; treat this only as a note that the user attached it.`);
   }
 
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? 'TeamBots';
@@ -112,9 +130,16 @@ export default function GroupScreen() {
             data={threads}
             keyExtractor={(t) => t.id}
             renderItem={({ item }) => (
-              <Pressable onPress={() => openThread(item)}>
-                <Card><Text style={styles.name}>{item.title}</Text></Card>
-              </Pressable>
+              <Card>
+                <View style={styles.threadRow}>
+                  <Pressable style={styles.threadTitle} onPress={() => openThread(item)}>
+                    <Text style={styles.name}>{item.title}</Text>
+                  </Pressable>
+                  <Pressable accessibilityLabel={`Delete group ${item.title}`} onPress={() => Alert.alert('Delete this group?', 'Its messages are deleted too. This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await deleteGroupThread(item.id); refresh(); } }])}>
+                    <Text style={styles.deleteText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </Card>
             )}
           />
         </View>
@@ -153,17 +178,21 @@ export default function GroupScreen() {
               );
             }}
           />
-          {messages.length === 0 && <Card><Text style={styles.sub}>No messages yet in this group.</Text></Card>}
           {loading && <LoadingRow label={workingBot ? `${workingBot} is replying…` : 'Group is working…'} />}
+          {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
           <View style={styles.composer}>
+            <AttachButton disabled={loading} onAttachment={(att) => { void handleAttachment(att); }} />
             <TextInput accessibilityLabel="Group message" onChangeText={setInput} placeholder="Message the whole group…" placeholderTextColor={tokens.textMuted} style={styles.composerInput} value={input} />
-            <Pressable accessibilityLabel="Send to group" disabled={loading} onPress={send} style={[styles.sendButton, loading && styles.sendDisabled]}>
+            <VoiceButton
+              disabled={loading}
+              onPartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
+              onFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote('Voice transcript inserted — check it, then tap Send. Nothing was sent automatically.'); }}
+              onError={(m) => { voiceBase.current = ''; setVoiceNote(m); }}
+            />
+            <Pressable accessibilityLabel="Send to group" disabled={loading} onPress={() => { void send(); }} style={[styles.sendButton, loading && styles.sendDisabled]}>
               <Feather name="send" size={18} color={tokens.onAccent} />
             </Pressable>
           </View>
-          <Pressable onPress={async () => { await deleteGroupThread(selected.id); setSelected(null); refresh(); }}>
-            <Text style={[styles.sub, { color: tokens.danger, marginTop: 12 }]}>Delete this group</Text>
-          </Pressable>
         </View>
       )}
     </View>
@@ -179,7 +208,11 @@ const styles = StyleSheet.create({
   body: { flex: 1, padding: tokens.space.md },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
   composer: { alignItems: 'center', flexDirection: 'row', gap: 8, marginTop: 8 },
-  composerInput: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.lg, borderWidth: 1, color: tokens.text, flex: 1, fontSize: tokens.font.md, paddingHorizontal: 14, paddingVertical: 12 },
+  composerInput: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.lg, borderWidth: 1, color: tokens.text, flex: 1, fontSize: tokens.font.md, height: 48, paddingHorizontal: 14, paddingVertical: 12 },
+  deleteText: { color: tokens.danger, fontSize: tokens.font.sm, fontWeight: '700' },
+  threadRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  threadTitle: { flex: 1 },
+  voiceNote: { color: tokens.textMuted, fontSize: tokens.font.sm, marginBottom: 4 },
   h: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 8, marginTop: 16 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
