@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../../src/components/ui';
 import { deleteMemory, getBot, listMemory, saveBot } from '../../src/lib/db';
 import { AVATAR_COLORS, AVATAR_ICONS } from '../../src/lib/tokens';
@@ -35,8 +36,16 @@ export default function BotEditScreen() {
   }
 
   return (
-    <ScrollView style={styles.wrap}>
-      <Text style={styles.title}>{isNew ? 'Create a bot' : `Edit ${bot.name}`}</Text>
+    <View style={styles.wrap}>
+      <View style={styles.header}>
+        <Pressable accessibilityLabel="Back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/bots'); }} style={styles.backRow}>
+          <Feather name="chevron-left" size={22} color={tokens.text} />
+          <Text style={styles.backText}>Back</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>{isNew ? 'Create a bot' : `Edit ${bot.name}`}</Text>
+        <View style={{ width: 68 }} />
+      </View>
+    <ScrollView style={styles.body}>
       <Text style={styles.sub}>Give the bot one specific task. That task is its personality — it will behave like that task.</Text>
       <Field label="Name" onChangeText={(v) => setBot({ ...bot, name: v })} value={bot.name} />
       <Field label="Role" onChangeText={(v) => setBot({ ...bot, role: v })} value={bot.role} />
@@ -64,11 +73,17 @@ export default function BotEditScreen() {
         </View>
       )}
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  sub: { color: tokens.textMuted, marginBottom: tokens.space.sm },
-  title: { fontSize: tokens.font.xl, fontWeight: '800', marginBottom: 8 },
-  wrap: { backgroundColor: tokens.bg, flex: 1, padding: tokens.space.md },
+  backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
+  backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
+  body: { flex: 1, padding: tokens.space.md },
+  header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
+  headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
+  sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
+  title: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800', marginBottom: 8 },
+  wrap: { backgroundColor: tokens.bg, flex: 1 },
 });
