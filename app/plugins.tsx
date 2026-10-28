@@ -5,9 +5,11 @@ import { Feather } from '@expo/vector-icons';
 import { Card } from '../src/components/ui';
 import { listPlugins } from '../src/lib/db';
 import { Plugin } from '../src/lib/types';
-import { tokens } from '../src/lib/tokens';
+import { useTokens } from '../src/lib/tokens';
 
 export default function PluginsScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const router = useRouter();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
 
@@ -42,7 +44,7 @@ export default function PluginsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
