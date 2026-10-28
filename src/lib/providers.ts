@@ -1,5 +1,6 @@
 import { Bot, ProviderId } from './types';
 import { getApiKey } from './keys';
+import { capHistory, getUniversal } from './universal';
 
 export class ProviderError extends Error {
   code: string;
@@ -20,30 +21,37 @@ const OPENAI_DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 // Validate an OpenAI-compatible endpoint: https only, no query/fragment.
 // A non-https or credential-carrying URL must never receive an API key.
-function resolveOpenAiEndpoint(bot: Bot): string {
-  const endpoint = bot.endpoint?.trim() || OPENAI_DEFAULT_ENDPOINT;
-  if (!/^https:\/\/[^/?#\s]+(\/[^?#\s]*)?$/.test(endpoint)) {
-    throw new ProviderError('BAD_ENDPOINT', 'That bot has an invalid API endpoint. Use an https:// URL with no query string, or leave the endpoint blank for OpenAI.');
+// A blank endpoint means the OpenAI default.
+function resolveOpenAiEndpoint(endpoint: string): string {
+  const trimmed = endpoint?.trim() || OPENAI_DEFAULT_ENDPOINT;
+  if (!/^https:\/\/[^/?#\s]+(\/[^?#\s]*)?$/.test(trimmed)) {
+    throw new ProviderError('BAD_ENDPOINT', 'The universal endpoint is invalid. Use an https:// URL with no query string, or leave it blank for OpenAI.');
   }
-  return endpoint;
+  return trimmed;
 }
 
 // One call, no retry loop. Network failures surface as a clear message.
-export async function chatWithBot(bot: Bot, systemPrompt: string, history: { role: string; text: string }[], userText: string): Promise<string> {
-  const key = await getApiKey(bot.provider);
-  if (!key) throw new ProviderError('NO_KEY', 'No API key set for this provider. Add your own key in Settings — TeamBots does not supply one.');
-  const provider = bot.provider as ProviderId;
+// The bot's own provider/model/endpoint are IGNORED: every chat uses the
+// shared universal config (see src/lib/universal.ts) instead, so Main
+// Chat, bot chats and group chats all use the same model.
+export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { role: string; text: string }[], userText: string): Promise<string> {
+  const universal = await getUniversal();
+  const provider = universal.provider as ProviderId;
   // Never fall through to OpenAI for an unknown provider value: a key
   // intended for one provider must never be sent to a different host.
   if (provider !== 'anthropic' && provider !== 'gemini' && provider !== 'openai-compatible') {
-    throw new ProviderError('BAD_PROVIDER', 'That bot has an unknown provider. Pick one of: openai-compatible, anthropic, gemini.');
+    throw new ProviderError('BAD_PROVIDER', 'The universal provider is unknown. Pick one of: openai-compatible, anthropic, gemini.');
   }
+  const key = await getApiKey(provider);
+  if (!key) throw new ProviderError('NO_KEY', 'No API key set for this provider. Add your own key in Settings — TeamBots does not supply one.');
+  const model = universal.model;
+  const capped = capHistory(history, systemPrompt, userText, universal.contextWindow);
   try {
     if (provider === 'anthropic') {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: bot.model, max_tokens: 1024, system: systemPrompt, messages: [...history.map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.text })), { role: 'user', content: userText }] }),
+        body: JSON.stringify({ model, max_tokens: 1024, system: systemPrompt, messages: [...capped.map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.text })), { role: 'user', content: userText }] }),
       });
       if (!res.ok) throw cleanError(res.status);
       const data: any = await res.json();
@@ -53,26 +61,25 @@ export async function chatWithBot(bot: Bot, systemPrompt: string, history: { rol
       // SECURITY FIX 2026-10-28: the key used to travel in the URL query
       // string, where it can land in logs. It now travels in a header only,
       // and the model name is URL-encoded so it cannot break out of the path.
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(bot.model)}:generateContent`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [...history.map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.text }] })), { role: 'user', parts: [{ text: userText }] }] }),
+        body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [...capped.map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.text }] })), { role: 'user', parts: [{ text: userText }] }] }),
       });
       if (!res.ok) throw cleanError(res.status);
       const data: any = await res.json();
       return data.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') || '(empty reply)';
     }
-    // OpenAI-compatible: the endpoint is the bot's own (validated, https)
-    // endpoint, defaulting to OpenAI. Previously this always called
-    // api.openai.com even for a Groq/OpenRouter/DeepSeek/xAI key — a key
-    // intended for another provider was sent to OpenAI. Fixed 2026-10-28.
-    const res = await fetch(resolveOpenAiEndpoint(bot), {
+    // OpenAI-compatible: the endpoint is the universal one (validated,
+    // https), defaulting to OpenAI. A key intended for another provider
+    // is never sent to a host the user did not choose.
+    const res = await fetch(resolveOpenAiEndpoint(universal.endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: bot.model,
-        messages: [{ role: 'system', content: systemPrompt }, ...history.map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.text })), { role: 'user', content: userText }],
+        model,
+        messages: [{ role: 'system', content: systemPrompt }, ...capped.map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.text })), { role: 'user', content: userText }],
       }),
     });
     if (!res.ok) throw cleanError(res.status);
