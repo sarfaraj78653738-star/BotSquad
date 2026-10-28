@@ -7,9 +7,11 @@ import { saveMcpServer, savePlugin, saveSkill } from '../src/lib/db';
 import { requireHttpsUrl } from '../src/lib/mcp';
 import { GithubPreview, previewGithubRepo } from '../src/lib/github';
 import { newId, nowIso } from '../src/lib/types';
-import { tokens } from '../src/lib/tokens';
+import { useTokens } from '../src/lib/tokens';
 
 export default function GithubInstallScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const router = useRouter();
   const [msg, setMsg] = useState('');
   const [ghUrl, setGhUrl] = useState('');
@@ -91,7 +93,7 @@ export default function GithubInstallScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
