@@ -7,9 +7,11 @@ import { deleteMcpServer, listBotMcpTools, listBots, listMcpServers, saveMcpServ
 import { deleteMcpToken, getMcpToken, setMcpToken } from '../src/lib/connections';
 import { listMcpTools, prepareMcpCall, requireHttpsUrl } from '../src/lib/mcp';
 import { Bot, McpServer, McpTool, newId, nowIso } from '../src/lib/types';
-import { tokens } from '../src/lib/tokens';
+import { useTokens } from '../src/lib/tokens';
 
 export default function McpScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const router = useRouter();
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBot, setSelectedBot] = useState('');
@@ -103,7 +105,7 @@ export default function McpScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
