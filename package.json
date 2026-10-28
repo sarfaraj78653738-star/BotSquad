@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@expo/vector-icons": "14.0.4",
     "@react-native-voice/voice": "^3.2.4",
     "expo": "~52.0.0",
     "expo-notifications": "~0.28.0",
