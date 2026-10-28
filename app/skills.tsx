@@ -19,6 +19,7 @@ export default function SkillsScreen() {
 
   const [skillName, setSkillName] = useState('');
   const [skillTemplate, setSkillTemplate] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     listBots().then((b) => { setBots(b); if (!selectedBot && b[0]) setSelectedBot(b[0].id); }).catch(() => {});
@@ -31,9 +32,18 @@ export default function SkillsScreen() {
 
   async function addSkill() {
     if (!skillName.trim() || !skillTemplate.trim()) { Alert.alert('Missing fields', 'A skill needs a name and instruction text.'); return; }
-    await saveSkill({ id: newId(), botId: null, name: skillName.trim(), template: skillTemplate, source: 'local', repoUrl: null, permissions: '', createdAt: nowIso() });
+    if (editingId) {
+      // Editing keeps the original skill (its bot link, source, and
+      // creation date) and only replaces its name and instructions.
+      const original = skills.find((s) => s.id === editingId);
+      await saveSkill({ id: editingId, botId: original ? original.botId : null, name: skillName.trim(), template: skillTemplate, source: original ? original.source : 'local', repoUrl: original ? original.repoUrl : null, permissions: original ? original.permissions : '', createdAt: original ? original.createdAt : nowIso() });
+      setEditingId(null);
+      setMsg('Skill updated. Enable it for a bot below.');
+    } else {
+      await saveSkill({ id: newId(), botId: null, name: skillName.trim(), template: skillTemplate, source: 'local', repoUrl: null, permissions: '', createdAt: nowIso() });
+      setMsg('Skill saved. Enable it for a bot below.');
+    }
     setSkillName(''); setSkillTemplate('');
-    setMsg('Skill saved. Enable it for a bot below.');
     refresh();
   }
 
@@ -54,10 +64,11 @@ export default function SkillsScreen() {
       ))}
       {msg ? <Card><Text>{msg}</Text></Card> : null}
 
-      <Text style={[styles.title, { marginTop: 20 }]}>Add a skill</Text>
+      <Text style={[styles.title, { marginTop: 20 }]}>{editingId ? 'Edit skill' : 'Add a skill'}</Text>
       <Field label="Skill name" onChangeText={setSkillName} value={skillName} />
       <Field label="Skill instructions (markdown)" multiline onChangeText={setSkillTemplate} value={skillTemplate} />
-      <Button title="Save skill" onPress={addSkill} />
+      <Button title={editingId ? 'Update skill' : 'Save skill'} onPress={addSkill} />
+      {editingId ? <><View style={{ height: 8 }} /><Button title="Cancel edit" variant="secondary" onPress={() => { setEditingId(null); setSkillName(''); setSkillTemplate(''); }} /></> : null}
       {skills.map((s) => (
         <Card key={s.id}>
           <Text style={styles.bold}>{s.name} ({s.source})</Text>
@@ -65,7 +76,9 @@ export default function SkillsScreen() {
           {s.repoUrl ? <Text style={styles.sub}>{s.repoUrl}</Text> : null}
           <Button title={enabledSkills.includes(s.id) ? 'Enabled for selected bot' : 'Enable for selected bot'} variant={enabledSkills.includes(s.id) ? 'primary' : 'secondary'} onPress={async () => { if (!selectedBot) return; const on = !enabledSkills.includes(s.id); await toggleBotSkill(selectedBot, s.id, on); refresh(); }} />
           <View style={{ height: 8 }} />
-          <Button title="Delete skill" variant="danger" onPress={async () => { await deleteSkill(s.id); refresh(); }} />
+          <Button title="Edit skill" variant="secondary" onPress={() => { setEditingId(s.id); setSkillName(s.name); setSkillTemplate(s.template); }} />
+          <View style={{ height: 8 }} />
+          <Button title="Delete skill" variant="danger" onPress={async () => { await deleteSkill(s.id); if (editingId === s.id) { setEditingId(null); setSkillName(''); setSkillTemplate(''); } refresh(); }} />
         </Card>
       ))}
     </ScrollView>
