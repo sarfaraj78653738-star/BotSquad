@@ -3,6 +3,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { getUniversal, setUniversal, UniversalConfig } from '../lib/universal';
+import { listModelSetups, ModelSetup } from '../lib/modelSetups';
 import { useTokens } from '../lib/tokens';
 
 // Model pill for the composer bar. Tapping it opens a bottom sheet
@@ -30,6 +31,7 @@ export function ModelPicker() {
   const styles = getStyles(tokens);
   const [model, setModel] = useState('gpt-4o-mini');
   const [provider, setProvider] = useState<UniversalConfig['provider']>('openai-compatible');
+  const [saved, setSaved] = useState<ModelSetup[]>([]);
   const [open, setOpen] = useState(false);
 
   async function refresh() {
@@ -37,13 +39,35 @@ export function ModelPicker() {
       const cfg = await getUniversal();
       setModel(cfg.model);
       setProvider(cfg.provider);
+      setSaved(await listModelSetups());
     } catch { /* keep last shown model */ }
   }
 
   useEffect(() => { refresh().catch(() => {}); }, []);
 
-  const models = [{ id: model, description: 'Current model.' }, ...MODELS_BY_PROVIDER[provider]]
-    .filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i);
+  // Current model first, then the user's saved setups (each one switches
+  // provider + endpoint + context window with it, not just the name),
+  // then the built-in provider models. Saved setups are what make the
+  // "add more models" flow in Settings usable from a chat.
+  // The current model is already listed first, so a saved setup for that
+  // same model + provider is skipped here to avoid a duplicate row; the
+  // current row keeps it active with its provider and endpoint intact.
+  const savedEntries = saved
+    .filter((s) => !(s.model === model && s.provider === provider))
+    .map((s) => ({
+    key: `${s.provider}|${s.model}|${s.endpoint}`,
+    id: s.model,
+    provider: s.provider,
+    description: s.provider === 'openai-compatible' ? 'Saved model.' : `Saved model (${s.provider}).`,
+    apply: () => setUniversal({ provider: s.provider, model: s.model, endpoint: s.endpoint, contextWindow: s.contextWindow }),
+  }));
+  const models = [
+    { key: `current|${model}`, id: model, provider, description: 'Current model.', apply: () => setUniversal({ model }) },
+    ...savedEntries,
+    ...MODELS_BY_PROVIDER[provider].map((m) => ({
+      key: `${provider}|${m.id}`, id: m.id, provider, description: m.description, apply: () => setUniversal({ model: m.id }),
+    })),
+  ].filter((m, i, arr) => arr.findIndex((x) => x.key === m.key) === i);
 
   return (
     <View>
@@ -67,8 +91,8 @@ export function ModelPicker() {
           </View>
           {models.map((m) => (
             <Pressable
-              key={m.id}
-              onPress={async () => { await setUniversal({ model: m.id }); setModel(m.id); setOpen(false); }}
+              key={m.key}
+              onPress={async () => { await m.apply(); setModel(m.id); setProvider(m.provider); setOpen(false); }}
               style={styles.row}
             >
               <View style={{ flex: 1 }}>
