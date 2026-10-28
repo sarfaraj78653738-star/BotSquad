@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Button, Card, Field } from '../src/components/ui';
@@ -19,7 +20,7 @@ const PRIVACY = `TeamBots Privacy — GitHub v1 (to be reviewed before any store
 // Settings is the hub, laid out as clean grouped rows (icon, title,
 // short subtitle). Group 1 is the person + device: Profile, Color mode,
 // Font style, Permissions. Group 2 is the tool pages — Connections,
-// Skills, Plugins, MCP servers, GitHub install, Routines, Browser.
+// Skills, Plugins, MCP servers, GitHub install, Routines.
 // Nothing stacks all of them on one page. Deliberately NOT here: no
 // Sharing section, no Voice section, no Upgrade/Billing, no
 // Capabilities toggles (no code execution, no web search toggle, no
@@ -32,7 +33,6 @@ const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof F
   { label: 'MCP servers', detail: 'HTTP/SSE tool servers', icon: 'server', route: '/mcp' },
   { label: 'GitHub install', detail: 'Install skills, plugins, MCP servers', icon: 'github', route: '/github-install' },
   { label: 'Routines', detail: 'Scheduled skills and routines', icon: 'clock', route: '/routines' },
-  { label: 'Browser', detail: 'Open a public page inside the app', icon: 'globe', route: '/browser' },
 ];
 
 type Provider = UniversalConfig['provider'];
@@ -63,10 +63,11 @@ function OptionSheet({ open, title, options, selected, onSelect, onClose }: {
 }) {
   const tokens = useTokens();
   const styles = getStyles(tokens);
+  const insets = useSafeAreaInsets();
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={open}>
       <Pressable accessibilityLabel="Close picker" onPress={onClose} style={styles.backdrop} />
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + 28 }]}>
         <View style={styles.sheetHead}>
           <Text style={styles.sheetTitle}>{title}</Text>
           <Pressable accessibilityLabel="Close picker" onPress={onClose} style={styles.closeButton}>
