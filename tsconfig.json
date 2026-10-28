@@ -1,0 +1,1 @@
+{"compilerOptions":{"noUncheckedIndexedAccess":false,"skipLibCheck":true,"strict":true},"extends":"expo/tsconfig.base","include":["app","src"]}
