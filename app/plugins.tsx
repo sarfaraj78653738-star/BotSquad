@@ -33,7 +33,7 @@ export default function PluginsScreen() {
         <Card key={p.id}>
           <Text style={styles.bold}>{p.name}</Text>
           <Text style={styles.sub}>{p.description}</Text>
-          <Text style={styles.sub}>Author: {p.author} · Permissions: {p.permissions}</Text>
+          <Text style={styles.sub}>Author: {p.author}, Permissions: {p.permissions}</Text>
           {p.hasExecutableCode ? <Text style={{ color: tokens.warning }}>Warning: this repo contains executable code. It was NOT executed — only its skill/instruction parts were installed.</Text> : null}
         </Card>
       ))}
