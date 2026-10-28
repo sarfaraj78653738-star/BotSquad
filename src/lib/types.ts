@@ -144,7 +144,7 @@ export const BOT_TEMPLATES: Omit<Bot, 'id' | 'createdAt' | 'updatedAt' | 'isPinn
   {
     name: 'Chief of Staff',
     role: 'Chief of Staff',
-    avatarColor: '#2563EB',
+    avatarColor: '#E7DCC8',
     avatarIcon: '◆',
     task: 'Coordinate the team, prepare meeting briefs, and turn scattered notes into a clear plan.',
     personality: 'Calm, concise, and organised. Lead with the decision, then the reasons.',
@@ -156,7 +156,7 @@ export const BOT_TEMPLATES: Omit<Bot, 'id' | 'createdAt' | 'updatedAt' | 'isPinn
   {
     name: 'Inbox Helper',
     role: 'Inbox Manager',
-    avatarColor: '#059669',
+    avatarColor: '#DDE7DC',
     avatarIcon: '●',
     task: 'Triage messages and draft replies for the user to approve.',
     personality: 'Helpful and brief. Keep drafts short and polite.',
@@ -168,7 +168,7 @@ export const BOT_TEMPLATES: Omit<Bot, 'id' | 'createdAt' | 'updatedAt' | 'isPinn
   {
     name: 'Sales Helper',
     role: 'Sales Outbound',
-    avatarColor: '#D97706',
+    avatarColor: '#E3DDE8',
     avatarIcon: '▲',
     task: 'Research accounts and draft outreach messages.',
     personality: 'Confident and specific. No generic flattery, one clear ask per draft.',
