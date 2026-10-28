@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { startVoice, VoiceError } from '../lib/voice';
 import { tokens } from '../lib/tokens';
 
-// Mic button for chat input. Partial results stream into onPartial, the
-// final result goes to onFinal. It never invents text: if the native
-// module is missing (Expo Go) or permission is denied, onError is called
-// with a plain message and nothing is inserted into the input.
+// Mic icon button for the chat composer. Partial results stream into
+// onPartial, the final result goes to onFinal. It never invents text:
+// if the native module is missing (Expo Go) or permission is denied,
+// onError is called with a plain message and nothing is inserted.
 export function VoiceButton({ onPartial, onFinal, onError, disabled }: {
   onPartial: (t: string) => void;
   onFinal: (t: string) => void;
@@ -39,14 +40,13 @@ export function VoiceButton({ onPartial, onFinal, onError, disabled }: {
       onPress={toggle}
       style={[styles.btn, listening && styles.btnListening, disabled && styles.btnDisabled]}
     >
-      <Text style={styles.text}>{listening ? '● Listening — tap to stop' : '🎤 Voice'}</Text>
+      <Feather name="mic" size={20} color={listening ? tokens.onAccent : tokens.text} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  btn: { backgroundColor: tokens.surfaceMuted, borderRadius: tokens.radius.md, marginBottom: tokens.space.sm, padding: 12 },
+  btn: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, height: 48, justifyContent: 'center', width: 48 },
   btnDisabled: { opacity: 0.5 },
-  btnListening: { backgroundColor: tokens.danger },
-  text: { fontWeight: '700', textAlign: 'center' },
+  btnListening: { backgroundColor: tokens.danger, borderColor: tokens.danger },
 });
