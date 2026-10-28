@@ -4,17 +4,21 @@ import { capHistory, getUniversal } from './universal';
 
 export class ProviderError extends Error {
   code: string;
-  constructor(code: string, message: string) {
+  // HTTP status when one is known, so the UI can show a plain number
+  // (see src/lib/errors.ts) instead of any message text.
+  status?: number;
+  constructor(code: string, message: string, status?: number) {
     super(message);
     this.code = code;
+    this.status = status;
   }
 }
 
 function cleanError(status: number): ProviderError {
-  if (status === 401 || status === 403) return new ProviderError('INVALID_KEY', 'Your API key was rejected. Check the key in Settings and try again.');
-  if (status === 429) return new ProviderError('RATE_LIMIT', 'The provider rate-limited this request (429). Wait a bit and try again. No retry loop was run.');
-  if (status === 402) return new ProviderError('BILLING', 'The provider reports a billing / credit problem. Check your provider account.');
-  return new ProviderError('PROVIDER_ERROR', `The provider returned HTTP ${status}.`);
+  if (status === 401 || status === 403) return new ProviderError('INVALID_KEY', 'Your API key was rejected. Check the key in Settings and try again.', status);
+  if (status === 429) return new ProviderError('RATE_LIMIT', 'The provider rate-limited this request (429). Wait a bit and try again. No retry loop was run.', status);
+  if (status === 402) return new ProviderError('BILLING', 'The provider reports a billing / credit problem. Check your provider account.', status);
+  return new ProviderError('PROVIDER_ERROR', `The provider returned HTTP ${status}.`, status);
 }
 
 const OPENAI_DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
@@ -97,7 +101,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
 export async function fetchPublicPageText(url: string): Promise<{ title: string; text: string; url: string }> {
   if (!/^https?:\/\//i.test(url)) throw new ProviderError('BAD_URL', 'Only http(s) URLs can be browsed.');
   const res = await fetch(url, { headers: { 'User-Agent': 'TeamBots/0.1 (public page reader)' } });
-  if (res.status === 401 || res.status === 403) throw new ProviderError('LOGIN_REQUIRED', 'This page needs a login or blocks automated reading. Open it yourself in the Browser tab instead — the Bot will not sign in for you.');
+  if (res.status === 401 || res.status === 403) throw new ProviderError('LOGIN_REQUIRED', 'This page needs a login or blocks automated reading. Open it yourself in the in-chat browser instead — the Bot will not sign in for you.');
   if (!res.ok) throw new ProviderError('PAGE_ERROR', `Could not load that page (HTTP ${res.status}).`);
   const html = await res.text();
   const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? url).trim();
