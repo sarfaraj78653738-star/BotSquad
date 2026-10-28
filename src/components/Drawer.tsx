@@ -64,9 +64,11 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
     );
   }
 
+  // Panel first, anchored LEFT; the backdrop follows it and dismisses
+  // the drawer on tap. (Previously the backdrop came first, which put
+  // the panel on the right.)
   return (
     <View style={styles.overlay}>
-      <Pressable accessibilityLabel="Close menu" style={styles.backdrop} onPress={onClose} />
       <View style={styles.panel}>
         <View style={styles.panelHead}>
           <Text style={styles.panelTitle}>TeamBots</Text>
@@ -79,6 +81,7 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
         <View style={styles.divider} />
         {renderItem(SETTINGS_ITEM)}
       </View>
+      <Pressable accessibilityLabel="Close menu" style={styles.backdrop} onPress={onClose} />
     </View>
   );
 }
