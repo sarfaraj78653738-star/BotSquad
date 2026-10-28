@@ -60,7 +60,7 @@ export default function GithubInstallScreen() {
         <View style={{ width: 84 }} />
       </View>
     <ScrollView style={styles.body}>
-      <Text style={styles.sub}>Paste any repo URL. Nothing installs or runs until you approve the preview below.</Text>
+      <Text style={styles.sub}>Nothing installs until you approve the preview.</Text>
       {msg ? <Card><Text>{msg}</Text></Card> : null}
       <Field label="GitHub repo URL" onChangeText={setGhUrl} placeholder="https://github.com/owner/repo" value={ghUrl} />
       <Button title={previewLoading ? 'Checking…' : 'Preview repo'} disabled={previewLoading} onPress={doPreview} />
