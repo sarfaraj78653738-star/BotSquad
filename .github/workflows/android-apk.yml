@@ -60,6 +60,18 @@ jobs:
         # so it is appended here after prebuild, before Gradle runs.
         run: echo "android.enableJetifier=true" >> android/gradle.properties
 
+      - name: Pin Kotlin version to 1.9.24
+        # Run #4, line 337: Compose Compiler 1.5.15 requires Kotlin
+        # 1.9.25, but the actual compiler is 1.9.24 — the version
+        # React Native 0.76 ships (react-native/gradle/libs.versions.toml).
+        # The template's build.gradle defaults to 1.9.25, and
+        # expo-modules-core picks its Compose compiler from that
+        # value, so the two disagree. Pinning android.kotlinVersion
+        # to 1.9.24 makes expo-modules-core pick Compose 1.5.14,
+        # which matches the compiler React Native actually uses.
+        # This must run after prebuild, which regenerates the file.
+        run: echo "android.kotlinVersion=1.9.24" >> android/gradle.properties
+
       - name: Increase Gradle heap
         # Run #3 got past the manifest merger, then failed at
         # :app:checkDebugAarMetadata with
