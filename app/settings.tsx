@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,6 +8,7 @@ import { Button, Card, Field } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { getApiKey, setApiKey } from '../src/lib/keys';
 import { getUniversal, setUniversal, UniversalConfig } from '../src/lib/universal';
+import { deleteModelSetup, listModelSetups, saveModelSetup, ModelSetup } from '../src/lib/modelSetups';
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
 import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../src/lib/tokens';
 
@@ -102,6 +103,16 @@ export default function SettingsScreen() {
   const [model, setModel] = useState('gpt-4o-mini');
   const [contextWindow, setContextWindow] = useState('8192');
   const [msg, setMsg] = useState('');
+  const [savedSetups, setSavedSetups] = useState<ModelSetup[]>([]);
+  const [active, setActive] = useState<UniversalConfig | null>(null);
+
+  const refreshSaved = useCallback(async () => {
+    try {
+      const [setups, u] = await Promise.all([listModelSetups(), getUniversal()]);
+      setSavedSetups(setups);
+      setActive(u);
+    } catch { /* list stays as it was */ }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -112,7 +123,8 @@ export default function SettingsScreen() {
       setContextWindow(String(u.contextWindow));
       setApiKeyState((await getApiKey(u.provider)) ?? '');
     })().catch(() => {});
-  }, []);
+    refreshSaved().catch(() => {});
+  }, [refreshSaved]);
 
   // Permissions row: shows the REAL status, never a claimed one. Camera
   // status comes from the image picker (a status check, not a prompt);
@@ -144,6 +156,11 @@ export default function SettingsScreen() {
   async function save() {
     const trimmedModel = model.trim();
     if (!trimmedModel) { setMsg('Enter a model name.'); return; }
+    // A model ID never contains a space: a display name typed here (for
+    // example "Inkling Small (free)") is sent verbatim to the provider
+    // and rejected there, surfacing only as a bare error number in chat.
+    // Reject it at save time with a usable hint instead.
+    if (/\s/.test(trimmedModel)) { setMsg('Enter the exact API model ID, with no spaces (for example thinkingmachines/inkling:free), not the display name.'); return; }
     const parsedWindow = parseInt(contextWindow, 10);
     if (!Number.isFinite(parsedWindow)) { setMsg('Context window must be a number.'); return; }
     const trimmedEndpoint = endpoint.trim();
@@ -154,7 +171,48 @@ export default function SettingsScreen() {
     // The endpoint is only ever used for openai-compatible (see providers.ts),
     // but it is preserved across provider switches so switching back does not lose it.
     await setUniversal({ provider, model: trimmedModel, endpoint: trimmedEndpoint, contextWindow: parsedWindow });
-    setMsg('Saved. This one setup applies to Main Chat, all bots, and group chat.');
+    // The just-saved setup joins the list below, and it is the active one.
+    // No success note is shown under the form anymore: the new row in the
+    // list below is the confirmation that the save worked.
+    await saveModelSetup({ provider, model: trimmedModel, endpoint: trimmedEndpoint, contextWindow: parsedWindow });
+    setMsg('');
+    // Empty the form so the next model can be added straight away. The
+    // saved key stays in secure storage (clearing the field does not
+    // delete it); only a later Save with an empty key field would.
+    setProvider('openai-compatible');
+    setApiKeyState('');
+    setEndpoint('');
+    setModel('');
+    setContextWindow('8192');
+    await refreshSaved();
+  }
+
+  // Activate a saved setup: it becomes the one every chat uses, and its
+  // values are loaded back into the form so they can be seen or edited.
+  async function useSetup(s: ModelSetup) {
+    await setUniversal({ provider: s.provider, model: s.model, endpoint: s.endpoint, contextWindow: s.contextWindow });
+    setProvider(s.provider);
+    setEndpoint(s.endpoint);
+    setModel(s.model);
+    setContextWindow(String(s.contextWindow));
+    setApiKeyState((await getApiKey(s.provider)) ?? '');
+    setMsg('');
+    await refreshSaved();
+  }
+
+  function deleteSetup(s: ModelSetup) {
+    Alert.alert('Delete saved model?', `${s.model} will be removed from the list below.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          // The active chat config is left untouched: deleting a row only
+          // removes it from the list, it does not switch the active model.
+          await deleteModelSetup(s.id);
+          await refreshSaved();
+        },
+      },
+    ]);
   }
 
   // Ads + payments are deferred (GitHub v1). There is intentionally no
@@ -221,7 +279,7 @@ export default function SettingsScreen() {
           ))}
         </Card>
         <Text style={styles.sectionTitle}>Model setup</Text>
-        <Text style={styles.sub}>One setup for every chat. Keys stay in secure storage only.</Text>
+        <Text style={styles.sub}>Save as many models as you like. The active one is used in every chat. Keys stay in secure storage only.</Text>
         <Card>
           <Text style={styles.bold}>Provider</Text>
           <View style={styles.chipRow}>
@@ -259,6 +317,33 @@ export default function SettingsScreen() {
           <Button title="Save" onPress={save} />
         </Card>
         {msg ? <Card><Text>{msg}</Text></Card> : null}
+        <Text style={styles.sectionTitle}>Saved models</Text>
+        <Card>
+          {savedSetups.length === 0 ? (
+            <Text style={styles.sub}>No saved models yet. Save one above and it will appear here.</Text>
+          ) : savedSetups.map((s, i) => {
+            const isActive = active !== null && active.provider === s.provider && active.model === s.model && active.endpoint === s.endpoint;
+            const providerLabel = PROVIDER_LABELS.find((p) => p.id === s.provider)?.label ?? s.provider;
+            return (
+              <View key={s.id} style={[styles.savedRow, i > 0 && styles.menuRowDivider]}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.savedHead}>
+                    <Text style={styles.menuLabel}>{s.model}</Text>
+                    {isActive ? <Text style={styles.activeBadge}>Active</Text> : null}
+                  </View>
+                  <Text style={styles.menuDetail}>{providerLabel}{s.endpoint ? ` · ${s.endpoint}` : ' · Default endpoint'} · Context {s.contextWindow}</Text>
+                  <Text style={styles.menuDetail}>Key: stored in secure storage, never shown here.</Text>
+                </View>
+                <Pressable onPress={() => useSetup(s)} style={styles.smallButton}>
+                  <Text style={styles.smallButtonText}>Use</Text>
+                </Pressable>
+                <Pressable onPress={() => deleteSetup(s)} style={styles.smallButton}>
+                  <Text style={styles.smallButtonText}>Delete</Text>
+                </Pressable>
+              </View>
+            );
+          })}
+        </Card>
         <Card>
           <Text style={styles.bold}>Ads & payments</Text>
           <Text style={styles.sub}>No ads in this version.</Text>
@@ -289,6 +374,11 @@ export default function SettingsScreen() {
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
+  activeBadge: { backgroundColor: tokens.accent, borderRadius: 999, color: tokens.onAccent, fontSize: tokens.font.sm, fontWeight: '700', overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 2 },
+  savedHead: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  savedRow: { alignItems: 'center', flexDirection: 'row', gap: 8, paddingVertical: 12 },
+  smallButton: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  smallButtonText: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   backdrop: { backgroundColor: tokens.scrim, flex: 1 },
   body: { flex: 1, padding: tokens.space.md },
   bodyText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
