@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View, Pressable } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Linking, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Button, Card, Field } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
-import { getSetting } from '../src/lib/db';
 import { getApiKey, setApiKey } from '../src/lib/keys';
 import { getUniversal, setUniversal, UniversalConfig } from '../src/lib/universal';
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
-import { tokens } from '../src/lib/tokens';
+import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../src/lib/tokens';
 
 const PRIVACY = `TeamBots Privacy — GitHub v1 (to be reviewed before any store release):
 • Chats, bots, skills, routines, and memory notes stay on your device in local storage.
@@ -16,10 +16,15 @@ const PRIVACY = `TeamBots Privacy — GitHub v1 (to be reviewed before any store
 • This GitHub version has NO ads, NO payments, and NO login. The only third parties are the model provider you chose, and any GitHub repo or MCP server you add yourself. No analytics or tracking is shipped.
 • This app is not affiliated with, endorsed by, or connected to any other AI product, and it makes no claim to be an official product of any other company.`;
 
-// Settings is the hub: one universal model setup (below) plus a menu
-// where each tool area has its own page — Connections, Skills,
-// Plugins, MCP servers, GitHub install, Routines, Browser. Nothing
-// stacks all of them on one page.
+// Settings is the hub, laid out as clean grouped rows (icon, title,
+// short subtitle). Group 1 is the person + device: Profile, Color mode,
+// Font style, Permissions. Group 2 is the tool pages — Connections,
+// Skills, Plugins, MCP servers, GitHub install, Routines, Browser.
+// Nothing stacks all of them on one page. Deliberately NOT here: no
+// Sharing section, no Voice section, no Upgrade/Billing, no
+// Capabilities toggles (no code execution, no web search toggle, no
+// memory-from-chats toggle — TeamBots has none of those), no
+// Notifications toggle (no notification system), no Time & focus.
 const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
   { label: 'Connections', detail: 'Add and enable connections', icon: 'layers', route: '/connect' },
   { label: 'Skills', detail: 'Instruction templates', icon: 'zap', route: '/skills' },
@@ -37,8 +42,59 @@ const PROVIDER_LABELS: { id: Provider; label: string }[] = [
   { id: 'gemini', label: 'Gemini' },
 ];
 
+const COLOR_OPTIONS: { id: ColorMode; label: string; detail: string }[] = [
+  { id: 'system', label: 'System', detail: 'Follows your phone' },
+  { id: 'light', label: 'Light', detail: 'Always light' },
+  { id: 'dark', label: 'Dark', detail: 'Always dark' },
+];
+
+const FONT_OPTIONS: { id: FontStyle; label: string; detail: string }[] = [
+  { id: 'default', label: 'Default', detail: "App's designed sizes" },
+  { id: 'system', label: 'System', detail: "Follow your device's text size" },
+];
+
+// Small bottom sheet used by the Color mode and Font style rows. Same
+// clean pattern as the model picker: title, one row per option with a
+// short detail line, checkmark on the current choice.
+function OptionSheet({ open, title, options, selected, onSelect, onClose }: {
+  open: boolean; title: string;
+  options: { id: string; label: string; detail: string }[];
+  selected: string; onSelect: (id: string) => void; onClose: () => void;
+}) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={open}>
+      <Pressable accessibilityLabel="Close picker" onPress={onClose} style={styles.backdrop} />
+      <View style={styles.sheet}>
+        <View style={styles.sheetHead}>
+          <Text style={styles.sheetTitle}>{title}</Text>
+          <Pressable accessibilityLabel="Close picker" onPress={onClose} style={styles.closeButton}>
+            <Feather name="x" size={20} color={tokens.text} />
+          </Pressable>
+        </View>
+        {options.map((o) => (
+          <Pressable key={o.id} onPress={() => { onSelect(o.id); onClose(); }} style={styles.sheetRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.sheetRowText, o.id === selected && styles.sheetRowTextActive]}>{o.label}</Text>
+              <Text style={styles.sheetRowDetail}>{o.detail}</Text>
+            </View>
+            {o.id === selected ? <Feather name="check" size={18} color={tokens.text} /> : null}
+          </Pressable>
+        ))}
+      </View>
+    </Modal>
+  );
+}
+
 export default function SettingsScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const router = useRouter();
+  const [colorMode, setColorMode] = useColorMode();
+  const [fontStyle, setFontStyle] = useFontStyle();
+  const [picker, setPicker] = useState<'color' | 'font' | null>(null);
+  const [permText, setPermText] = useState('Open system settings to review');
   const [provider, setProvider] = useState<Provider>('openai-compatible');
   const [apiKey, setApiKeyState] = useState('');
   const [endpoint, setEndpoint] = useState('');
@@ -57,6 +113,27 @@ export default function SettingsScreen() {
     })().catch(() => {});
   }, []);
 
+  // Permissions row: shows the REAL status, never a claimed one. Camera
+  // status comes from the image picker (a status check, not a prompt);
+  // microphone status comes from the OS check on Android. On any other
+  // platform, or if a check fails, the row says so and opens system
+  // settings instead of claiming a status. Refreshed every time this
+  // screen is focused, so returning from system settings updates it.
+  const refreshPermissions = useCallback(async () => {
+    try {
+      const cam = await ImagePicker.getCameraPermissionsAsync();
+      const camLabel = cam.status === 'granted' ? 'granted' : cam.status === 'denied' ? 'denied' : 'not set';
+      let micLabel = 'check in system settings';
+      if (Platform.OS === 'android') {
+        micLabel = (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) ? 'granted' : 'not granted';
+      }
+      setPermText(`Camera: ${camLabel} · Microphone: ${micLabel}`);
+    } catch {
+      setPermText('Open system settings to review');
+    }
+  }, []);
+  useFocusEffect(useCallback(() => { refreshPermissions().catch(() => {}); }, [refreshPermissions]));
+
   async function changeProvider(p: Provider) {
     setProvider(p);
     // Each provider has its own key in secure storage; show that one.
@@ -70,8 +147,7 @@ export default function SettingsScreen() {
     if (!Number.isFinite(parsedWindow)) { setMsg('Context window must be a number.'); return; }
     const trimmedEndpoint = endpoint.trim();
     if (provider === 'openai-compatible' && trimmedEndpoint && !/^https:\/\/[^/?#\s]+(\/[^?#\s]*)?$/.test(trimmedEndpoint)) {
-      setMsg('Endpoint must be an https:// URL with no query string, or blank for OpenAI.');
-      return;
+      setMsg('Endpoint must be an https:// URL with no query string, or blank for OpenAI.'); return;
     }
     await setApiKey(provider, apiKey);
     // The endpoint is only ever used for openai-compatible (see providers.ts),
@@ -84,6 +160,9 @@ export default function SettingsScreen() {
   // purchase button in this version: a button that granted premium with
   // no payment would be a fake-purchase path. See src/lib/ads.ts.
 
+  const colorLabel = COLOR_OPTIONS.find((o) => o.id === colorMode)?.label ?? 'System';
+  const fontLabel = FONT_OPTIONS.find((o) => o.id === fontStyle)?.label ?? 'Default';
+
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
@@ -92,9 +171,45 @@ export default function SettingsScreen() {
         <View style={{ width: 34 }} />
       </View>
       <ScrollView style={styles.body}>
+        <Text style={styles.sectionTitle}>General</Text>
         <Card>
-          {MENU.map((m) => (
-            <Pressable key={m.route} onPress={() => router.push(m.route as never)} style={styles.menuRow}>
+          <Pressable onPress={() => router.push('/profile' as never)} style={styles.menuRow}>
+            <Feather name="user" size={20} color={tokens.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Profile</Text>
+              <Text style={styles.menuDetail}>Name, photo, and preferences</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => setPicker('color')} style={[styles.menuRow, styles.menuRowDivider]}>
+            <Feather name="moon" size={20} color={tokens.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Color mode</Text>
+              <Text style={styles.menuDetail}>{colorLabel}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => setPicker('font')} style={[styles.menuRow, styles.menuRowDivider]}>
+            <Feather name="type" size={20} color={tokens.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Font style</Text>
+              <Text style={styles.menuDetail}>{fontLabel}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => Linking.openSettings()} style={[styles.menuRow, styles.menuRowDivider]}>
+            <Feather name="shield" size={20} color={tokens.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Permissions</Text>
+              <Text style={styles.menuDetail}>{permText}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+        </Card>
+        <Text style={styles.sectionTitle}>Tools</Text>
+        <Card>
+          {MENU.map((m, i) => (
+            <Pressable key={m.route} onPress={() => router.push(m.route as never)} style={[styles.menuRow, i > 0 && styles.menuRowDivider]}>
               <Feather name={m.icon} size={20} color={tokens.textMuted} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.menuLabel}>{m.label}</Text>
@@ -152,11 +267,28 @@ export default function SettingsScreen() {
           <Text style={styles.bodyText}>{PRIVACY}</Text>
         </Card>
       </ScrollView>
+      <OptionSheet
+        open={picker === 'color'}
+        title="Color mode"
+        options={COLOR_OPTIONS}
+        selected={colorMode}
+        onSelect={(id) => setColorMode(id as ColorMode)}
+        onClose={() => setPicker(null)}
+      />
+      <OptionSheet
+        open={picker === 'font'}
+        title="Font style"
+        options={FONT_OPTIONS}
+        selected={fontStyle}
+        onSelect={(id) => setFontStyle(id as FontStyle)}
+        onClose={() => setPicker(null)}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
+  backdrop: { backgroundColor: tokens.scrim, flex: 1 },
   body: { flex: 1, padding: tokens.space.md },
   bodyText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   bold: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 4 },
@@ -165,6 +297,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   chipText: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '600' },
   chipTextActive: { color: tokens.onAccent, fontWeight: '700' },
+  closeButton: { padding: 6 },
   contextInput: { width: 110 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
@@ -172,8 +305,16 @@ const styles = StyleSheet.create({
   menuDetail: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 2 },
   menuLabel: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
   menuRow: { alignItems: 'center', flexDirection: 'row', gap: 12, paddingVertical: 12 },
+  menuRowDivider: { borderTopColor: tokens.border, borderTopWidth: 1 },
   modelRow: { flexDirection: 'row', gap: 8 },
   sectionTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800', marginBottom: 8, marginTop: 8 },
+  sheet: { backgroundColor: tokens.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: tokens.space.md, paddingBottom: 28 },
+  sheetHead: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  sheetRow: { alignItems: 'center', borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingVertical: 12 },
+  sheetRowDetail: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 2 },
+  sheetRowText: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '600' },
+  sheetRowTextActive: { color: tokens.text, fontWeight: '700' },
+  sheetTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
   wrap: { backgroundColor: tokens.bg, flex: 1 },
 });
