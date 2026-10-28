@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { ADS_ENABLED } from '../lib/ads';
-import { tokens } from '../lib/tokens';
+import { useTokens } from '../lib/tokens';
 
 export function Button({ title, onPress, variant = 'primary', disabled }: { title: string; onPress: () => void; variant?: 'primary' | 'secondary' | 'danger'; disabled?: boolean }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   return (
     <Pressable
       accessibilityRole="button"
@@ -18,6 +20,8 @@ export function Button({ title, onPress, variant = 'primary', disabled }: { titl
 }
 
 export function Field({ label, value, onChangeText, multiline, placeholder, secure }: { label: string; value: string; onChangeText: (t: string) => void; multiline?: boolean; placeholder?: string; secure?: boolean }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -36,12 +40,16 @@ export function Field({ label, value, onChangeText, multiline, placeholder, secu
 }
 
 export function Card({ children }: { children: React.ReactNode }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   return <View style={styles.card}>{children}</View>;
 }
 
 // Avatar shows the bot's initial letter on a soft tint of its stored
 // colour. The stored geometric icon value is intentionally not rendered.
 export function Avatar({ color, icon, label, size = 44 }: { color: string; icon?: string; label?: string; size?: number }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const initial = (label ?? '').trim().charAt(0).toUpperCase() || 'T';
   const bg = color.length === 7 ? `${color}2E` : color;
   return (
@@ -52,6 +60,8 @@ export function Avatar({ color, icon, label, size = 44 }: { color: string; icon?
 }
 
 export function Chip({ label }: { label: string }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   return (
     <View style={styles.chip}>
       <Text style={styles.chipText}>{label}</Text>
@@ -60,6 +70,8 @@ export function Chip({ label }: { label: string }) {
 }
 
 export function CheckBox({ selected, label }: { selected: boolean; label?: string }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   return (
     <View style={styles.checkRow}>
       <View style={[styles.checkBox, selected && styles.checkBoxSelected]}>
@@ -74,6 +86,8 @@ export function CheckBox({ selected, label }: { selected: boolean; label?: strin
 // TODO: replace with a real AdMob banner/interstitial before any release
 // that actually shows ads.
 export function AdSlot({ visible }: { visible: boolean }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   if (!visible || !ADS_ENABLED) return null;
   return (
     <View accessibilityLabel="Advertisement placeholder" style={styles.ad}>
@@ -84,6 +98,8 @@ export function AdSlot({ visible }: { visible: boolean }) {
 }
 
 export function LoadingRow({ label }: { label: string }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   return (
     <View style={styles.loading}>
       <ActivityIndicator color={tokens.textMuted} />
@@ -97,7 +113,7 @@ export function useToggle(initial = false) {
   return [v, () => setV(!v)] as const;
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   ad: { backgroundColor: tokens.accentSoft, borderRadius: tokens.radius.md, marginVertical: tokens.space.sm, padding: tokens.space.md },
   adSub: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 4 },
   adText: { color: tokens.text, fontWeight: '700' },
