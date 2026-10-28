@@ -1,11 +1,14 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { MenuButton } from '../../src/components/Drawer';
 import { ChatView } from '../../src/components/ChatView';
 import { useTokens } from '../../src/lib/tokens';
 
 // A single bot's chat, reached from Bots or History. It reuses the same
-// ChatView as Main Chat; only its header differs (back button + name).
+// ChatView as Main Chat. Its header follows the same pattern as the
+// Group thread header: NO Back button — the left control is the drawer
+// menu, so the user can switch anywhere from inside a chat, and
+// "+ New" opens the new-bot form (the Bots section's create screen).
 export default function BotChatScreen() {
   const tokens = useTokens();
   const styles = getStyles(tokens);
@@ -17,16 +20,15 @@ export default function BotChatScreen() {
       botId={id}
       topBar={(bot) => (
         <View style={styles.header}>
-          <Pressable
-            accessibilityLabel="Back"
-            onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }}
-            style={styles.backButton}
-          >
-            <Feather name="chevron-left" size={22} color={tokens.text} />
-            <Text style={styles.backText}>Back</Text>
-          </Pressable>
+          <MenuButton />
           <Text style={styles.headerTitle} numberOfLines={1}>{bot ? bot.name : 'Chat'}</Text>
-          <View style={{ width: 68 }} />
+          <Pressable
+            accessibilityLabel="Create a new bot"
+            onPress={() => router.push('/bot/new' as never)}
+            style={styles.newButton}
+          >
+            <Text style={styles.newText}>+ New</Text>
+          </Pressable>
         </View>
       )}
     />
@@ -34,10 +36,10 @@ export default function BotChatScreen() {
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
-  backButton: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
-  backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
+  newButton: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
+  newText: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md },
   wrap: { backgroundColor: tokens.bg, flex: 1 },
 });
