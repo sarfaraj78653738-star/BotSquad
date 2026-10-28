@@ -46,7 +46,6 @@ export default function SkillsScreen() {
         <View style={{ width: 84 }} />
       </View>
     <ScrollView style={styles.body}>
-      <Text style={styles.sub}>Skills are instruction text. Nothing is used until you enable it for a specific bot.</Text>
       <Text style={styles.bold}>Selected bot for enabling</Text>
       {bots.map((b) => (
         <Button key={b.id} title={b.name} variant={selectedBot === b.id ? 'primary' : 'secondary'} onPress={() => setSelectedBot(b.id)} />
