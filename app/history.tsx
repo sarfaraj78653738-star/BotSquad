@@ -12,16 +12,16 @@ type GroupRow = { thread: GroupThread; snippet: string };
 
 // History, kept strictly separate, as the user asked: Main Chat
 // history, Bots history, and Group Chat history are three separate
-// tabs — nothing is mixed. Main Chat shows the conversation of the
-// bot Main Chat opens with (pinned bot first, otherwise first bot);
-// Bots shows every bot's own chat separately; Group shows group
-// threads separately. A bot chat opens that bot's chat screen; a
-// group thread opens the Group screen with that thread preselected
-// via its route parameter.
+// tabs — nothing is mixed. Main Chat shows the universal chat
+// (fixed id 'universal-chat', opened from '/'); Bots shows every
+// bot's own chat separately; Group shows group threads separately.
+// A bot chat opens that bot's chat screen; a group thread opens
+// the Group screen with that thread preselected via its route
+// parameter.
 type Tab = 'main' | 'bots' | 'group';
 export default function HistoryScreen() {
   const router = useRouter();
-  const [bots, setBots] = useState<Bot[]>([]);
+  const [universalSnippet, setUniversalSnippet] = useState('No messages yet.');
   const [botRows, setBotRows] = useState<BotChatRow[]>([]);
   const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
   const [tab, setTab] = useState<Tab>('main');
@@ -29,7 +29,9 @@ export default function HistoryScreen() {
   const refresh = useCallback(() => {
     (async () => {
       const bots = await listBots();
-      setBots(bots);
+      const universalMsgs = await listMessages('universal-chat').catch(() => []);
+      const universalLast = universalMsgs[universalMsgs.length - 1];
+      setUniversalSnippet(universalLast ? universalLast.text : 'No messages yet.');
       const chats = await listChats();
       const rows: BotChatRow[] = [];
       for (const chat of chats) {
@@ -66,26 +68,17 @@ export default function HistoryScreen() {
           ))}
         </View>
         {tab === 'main' && (
-          <>
-            {(() => {
-              const mainBot = bots[0] ?? null;
-              if (!mainBot) return <Card><Text style={styles.sub}>No bots yet. Create a bot from Bots first.</Text></Card>;
-              const row = botRows.find((r) => r.chat.botId === mainBot.id);
-              return (
-                <Pressable onPress={() => router.replace('/')}>
-                  <Card>
-                    <View style={styles.row}>
-                      <Avatar color={mainBot.avatarColor} label={mainBot.name} size={40} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.name}>Main Chat — {mainBot.name}</Text>
-                        <Text style={styles.snippet} numberOfLines={2}>{row ? row.snippet : 'No messages yet.'}</Text>
-                      </View>
-                    </View>
-                  </Card>
-                </Pressable>
-              );
-            })()}
-          </>
+          <Pressable onPress={() => router.replace('/')}>
+            <Card>
+              <View style={styles.row}>
+                <Avatar color="#E7DCC8" label="Main Chat" size={40} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>Main Chat</Text>
+                  <Text style={styles.snippet} numberOfLines={2}>{universalSnippet}</Text>
+                </View>
+              </View>
+            </Card>
+          </Pressable>
         )}
         {tab === 'bots' && (
           <>
