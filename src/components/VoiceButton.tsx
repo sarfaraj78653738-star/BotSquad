@@ -2,18 +2,21 @@ import { useRef, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { startVoice, VoiceError } from '../lib/voice';
-import { tokens } from '../lib/tokens';
+import { useTokens } from '../lib/tokens';
 
 // Mic icon button for the chat composer. Partial results stream into
 // onPartial, the final result goes to onFinal. It never invents text:
 // if the native module is missing (Expo Go) or permission is denied,
 // onError is called with a plain message and nothing is inserted.
-export function VoiceButton({ onPartial, onFinal, onError, disabled }: {
+export function VoiceButton({ onPartial, onFinal, onError, disabled, variant }: {
   onPartial: (t: string) => void;
   onFinal: (t: string) => void;
   onError: (m: string) => void;
   disabled?: boolean;
+  variant?: 'circle' | 'flat';
 }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const [listening, setListening] = useState(false);
   const stopRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -38,15 +41,16 @@ export function VoiceButton({ onPartial, onFinal, onError, disabled }: {
       accessibilityRole="button"
       disabled={disabled}
       onPress={toggle}
-      style={[styles.btn, listening && styles.btnListening, disabled && styles.btnDisabled]}
+      style={[variant === 'flat' ? styles.flatBtn : styles.btn, listening && styles.btnListening, disabled && styles.btnDisabled]}
     >
       <Feather name="mic" size={20} color={listening ? tokens.onAccent : tokens.text} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   btn: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, height: 48, justifyContent: 'center', width: 48 },
+  flatBtn: { alignItems: 'center', height: 36, justifyContent: 'center', width: 36 },
   btnDisabled: { opacity: 0.5 },
   btnListening: { backgroundColor: tokens.danger, borderColor: tokens.danger },
 });
