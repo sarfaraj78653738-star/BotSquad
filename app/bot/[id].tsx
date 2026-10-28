@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../../src/components/ui';
 import { deleteMemory, getBot, listMemory, saveBot } from '../../src/lib/db';
 import { AVATAR_COLORS, AVATAR_ICONS } from '../../src/lib/tokens';
-import { Bot, MemoryNote, PROVIDERS, ProviderId, newId, nowIso } from '../../src/lib/types';
+import { Bot, MemoryNote, newId, nowIso } from '../../src/lib/types';
 import { tokens } from '../../src/lib/tokens';
 
 export default function BotEditScreen() {
@@ -53,10 +53,6 @@ export default function BotEditScreen() {
       <Field label="Personality (how it talks and works)" multiline onChangeText={(v) => setBot({ ...bot, personality: v })} value={bot.personality} />
       <Field label="Instructions" multiline onChangeText={(v) => setBot({ ...bot, instructions: v })} value={bot.instructions} />
       <Field label="Boundaries (always win)" multiline onChangeText={(v) => setBot({ ...bot, boundaries: v })} value={bot.boundaries} />
-      <Field label="Provider" onChangeText={(v) => setBot({ ...bot, provider: v as ProviderId })} value={bot.provider} />
-      <Field label="Model" onChangeText={(v) => setBot({ ...bot, model: v })} value={bot.model} />
-      <Field label="API endpoint (OpenAI-compatible only; https, no query — blank = OpenAI)" onChangeText={(v) => setBot({ ...bot, endpoint: v })} value={bot.endpoint ?? ''} />
-      <Text style={styles.sub}>Provider options: {PROVIDERS.map((p) => p.id).join(', ')}</Text>
       <Button title="Save bot" onPress={save} />
       {!isNew && (
         <View style={{ marginTop: 24 }}>
