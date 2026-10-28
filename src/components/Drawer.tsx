@@ -2,20 +2,29 @@ import { createContext, useContext, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
-import { tokens } from '../lib/tokens';
+import { useTokens } from '../lib/tokens';
 
 // The app's only navigation control: a slide-over drawer opened from the
-// hamburger button in each main screen's header. The drawer contains
-// exactly five items, in this order, with Settings pinned at the bottom.
-// Connections, Routines and Browser are NOT drawer items — they live
-// under Settings.
+// hamburger button in each main screen's header. Groups, in order:
+// main navigation, History, Projects/Artifacts, then Settings pinned at
+// the bottom. A hairline divider (theme border token, visible in both
+// light and dark mode) follows EVERY group. Connections, Routines and
+// Browser are NOT drawer items — they live under Settings.
 type DrawerItem = { label: string; icon: React.ComponentProps<typeof Feather>['name']; route: string };
 
-const ITEMS: DrawerItem[] = [
+const MAIN_ITEMS: DrawerItem[] = [
   { label: 'Main Chat', icon: 'message-square', route: '/' },
   { label: 'Bots', icon: 'users', route: '/bots' },
   { label: 'Group', icon: 'message-circle', route: '/group' },
+];
+
+const HISTORY_ITEMS: DrawerItem[] = [
   { label: 'History', icon: 'archive', route: '/history' },
+];
+
+const WORK_ITEMS: DrawerItem[] = [
+  { label: 'Projects', icon: 'folder', route: '/projects' },
+  { label: 'Artifacts', icon: 'file-text', route: '/artifacts' },
 ];
 
 const SETTINGS_ITEM: DrawerItem = { label: 'Settings', icon: 'settings', route: '/settings' };
@@ -27,6 +36,8 @@ export function useDrawer() {
 }
 
 export function MenuButton() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const { open } = useDrawer();
   return (
     <Pressable accessibilityLabel="Open menu" accessibilityRole="button" onPress={open} style={styles.menuButton}>
@@ -46,6 +57,8 @@ export function DrawerProvider({ children }: { children: React.ReactNode }) {
 }
 
 function DrawerMenu({ onClose }: { onClose: () => void }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -76,9 +89,13 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
             <Feather name="x" size={20} color={tokens.text} />
           </Pressable>
         </View>
-        {ITEMS.map(renderItem)}
-        <View style={{ flex: 1 }} />
+        {MAIN_ITEMS.map(renderItem)}
         <View style={styles.divider} />
+        {HISTORY_ITEMS.map(renderItem)}
+        <View style={styles.divider} />
+        {WORK_ITEMS.map(renderItem)}
+        <View style={styles.divider} />
+        <View style={{ flex: 1 }} />
         {renderItem(SETTINGS_ITEM)}
       </View>
       <Pressable accessibilityLabel="Close menu" style={styles.backdrop} onPress={onClose} />
@@ -86,8 +103,8 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { backgroundColor: 'rgba(33, 29, 24, 0.4)', flex: 1 },
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
+  backdrop: { backgroundColor: tokens.scrim, flex: 1 },
   closeButton: { padding: 6 },
   divider: { backgroundColor: tokens.border, height: 1, marginVertical: 8 },
   item: { alignItems: 'center', borderRadius: tokens.radius.md, flexDirection: 'row', gap: 12, paddingHorizontal: 12, paddingVertical: 13 },
