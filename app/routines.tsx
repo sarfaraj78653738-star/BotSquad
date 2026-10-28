@@ -77,7 +77,7 @@ export default function RoutinesScreen() {
           renderItem={({ item }) => (
             <Card>
               <Text style={styles.bold}>{item.name}</Text>
-              <Text style={styles.sub}>{botName(item.botId)} · {item.schedule} · {item.status} · last run: {item.lastRunAt ?? 'never'}</Text>
+              <Text style={styles.sub}>{botName(item.botId)}, {item.schedule}, {item.status}, last run: {item.lastRunAt ?? 'never'}</Text>
               <View style={styles.row}>
                 <Button title="Run as draft" onPress={() => runAsDraft(item)} />
                 <Button title={item.status === 'active' ? 'Pause' : 'Resume'} variant="secondary" onPress={async () => { await setRoutineStatus(item.id, item.status === 'active' ? 'paused' : 'active'); refresh(); }} />
