@@ -50,7 +50,6 @@ export default function ConnectScreen() {
         <View style={{ width: 84 }} />
       </View>
     <ScrollView style={styles.body}>
-      <Text style={styles.sub}>Nothing here is used until you enable it for a specific bot.</Text>
       <Text style={styles.bold}>Selected bot for enabling</Text>
       {bots.map((b) => (
         <Button key={b.id} title={b.name} variant={selectedBot === b.id ? 'primary' : 'secondary'} onPress={() => setSelectedBot(b.id)} />
