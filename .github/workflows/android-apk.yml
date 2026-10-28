@@ -29,8 +29,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # NOTE 2026-10-28: no separate Android SDK step — ubuntu-latest
+      # already ships the Android SDK (ANDROID_HOME), and
+      # android-actions/setup-android@v3 failed with
+      # "Failed to find package 'tools'" / sdkmanager exit code 1,
+      # because the old 'tools' package no longer exists in
+      # cmdline-tools. Gradle picks up the runner's SDK directly.
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
