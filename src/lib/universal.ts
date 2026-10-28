@@ -33,6 +33,23 @@ export async function setUniversal(patch: Partial<UniversalConfig>): Promise<voi
   if (patch.contextWindow !== undefined) await setSetting('universal_context_window', String(clampContextWindow(patch.contextWindow)));
 }
 
+// Which Main Chat thread is currently open. The first thread ever is
+// the fixed id 'universal-chat' (kept for backward compatibility with
+// chats saved before the New chat button existed); every New chat
+// creates a fresh 'universal-<id>' thread and makes it current. Old
+// threads are never deleted — History lists them and reopening one
+// makes it current again. A fresh thread is also the clean way to
+// reset context: capHistory() below silently drops the oldest messages
+// once the window fills, so without a new thread the user could never
+// get a clean context back.
+export async function getUniversalChatId(): Promise<string> {
+  return (await getSetting('universal_chat_id'))?.trim() || 'universal-chat';
+}
+
+export async function setUniversalChatId(id: string): Promise<void> {
+  await setSetting('universal_chat_id', id);
+}
+
 // Drop oldest messages first until the estimated token count
 // (chars / 4, system + history + user) fits within contextWindow.
 // At least the newest message is always kept.
