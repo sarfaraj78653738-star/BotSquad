@@ -1,7 +1,6 @@
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
 import { Avatar, Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { ComposerBar } from '../src/components/ComposerBar';
@@ -127,17 +126,24 @@ export default function GroupScreen() {
   return (
     <View style={styles.wrap}>
       {selected ? (
+        // Inside a thread there is deliberately NO Back button anymore:
+        // the left control is the drawer menu, exactly like every other
+        // main screen, so the user can switch anywhere from here. The
+        // way back to the group list is "+ New chat": it leaves the
+        // thread (nothing is deleted) and opens the new-group form, so
+        // tapping it starts a new group. The drawer alone cannot do
+        // that, because tapping "Group" in the drawer while already on
+        // the Group screen does nothing.
         <View style={styles.header}>
-          <Pressable
-            accessibilityLabel="Back to groups"
-            onPress={() => { setSelected(null); refresh(); }}
-            style={styles.backButton}
-          >
-            <Feather name="chevron-left" size={22} color={tokens.text} />
-            <Text style={styles.backText}>Back</Text>
-          </Pressable>
+          <MenuButton />
           <Text style={styles.headerTitle} numberOfLines={1}>{selected.title}</Text>
-          <View style={{ width: 68 }} />
+          <Pressable
+            accessibilityLabel="Start a new group chat"
+            onPress={() => { setSelected(null); setInput(''); setFailedCode(null); setFailedText(null); appliedThreadId.current = null; refresh(); }}
+            style={styles.newChatButton}
+          >
+            <Text style={styles.newChatText}>+ New chat</Text>
+          </Pressable>
         </View>
       ) : (
         <View style={styles.header}>
@@ -268,8 +274,6 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
-  backButton: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
-  backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
   failedRow: { alignItems: 'center', borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
@@ -286,6 +290,8 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   input: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, color: tokens.text, fontSize: tokens.font.md, marginBottom: 12, padding: 14 },
   name: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
+  newChatButton: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
+  newChatText: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   row: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: 8 },
   userBubble: { backgroundColor: tokens.accent, borderRadius: tokens.radius.lg, maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10 },
