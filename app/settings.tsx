@@ -44,7 +44,6 @@ export default function SettingsScreen() {
   const [endpoint, setEndpoint] = useState('');
   const [model, setModel] = useState('gpt-4o-mini');
   const [contextWindow, setContextWindow] = useState('8192');
-  const [adsRemoved, setAdsRemoved] = useState(false);
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
@@ -55,7 +54,6 @@ export default function SettingsScreen() {
       setModel(u.model);
       setContextWindow(String(u.contextWindow));
       setApiKeyState((await getApiKey(u.provider)) ?? '');
-      setAdsRemoved((await getSetting('premium_ads_removed')) === '1');
     })().catch(() => {});
   }, []);
 
@@ -141,13 +139,13 @@ export default function SettingsScreen() {
               value={contextWindow}
             />
           </View>
-          <Text style={styles.sub}>Context window: max tokens for this model, as a number.</Text>
+          <Text style={styles.sub}>Max tokens, as a number.</Text>
           <Button title="Save" onPress={save} />
         </Card>
         {msg ? <Card><Text>{msg}</Text></Card> : null}
         <Card>
-          <Text style={styles.bold}>Ads & payments — arrive later</Text>
-          <Text style={styles.sub}>This GitHub version has no ads and takes no payment. When ads and premium return, premium will remove ads ONLY and will never lock a feature. Current ad state: {adsRemoved ? 'ads removed (legacy local flag)' : 'no ads in this version'}.</Text>
+          <Text style={styles.bold}>Ads & payments</Text>
+          <Text style={styles.sub}>No ads in this version.</Text>
         </Card>
         <Card>
           <Text style={styles.bold}>Privacy Policy</Text>
