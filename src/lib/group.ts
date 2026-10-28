@@ -1,6 +1,7 @@
 import { addGroupMessage, getSetting, listBotSkillIds, listBots, listGroupMessages, listMemory, listSkills } from './db';
 import { buildSystemPrompt } from './prompt';
-import { ProviderError, chatWithBot } from './providers';
+import { chatWithBot } from './providers';
+import { errorCode } from './errors';
 import { Bot, GroupMessage, newId, nowIso } from './types';
 
 // Group chat runner: each selected bot replies IN TURN, in the order the
@@ -15,9 +16,14 @@ export async function runGroupMessage(
   members: Bot[],
   userText: string,
   onBotWorking?: (botName: string | null) => void,
+  skipUserMessage = false,
 ): Promise<void> {
-  const userMsg: GroupMessage = { id: newId(), threadId, botId: null, role: 'user', text: userText.trim(), approvalState: null, createdAt: nowIso() };
-  await addGroupMessage(userMsg);
+  // skipUserMessage: a Retry resends the failed text without adding a
+  // second copy of the user's bubble to the thread.
+  if (!skipUserMessage) {
+    const userMsg: GroupMessage = { id: newId(), threadId, botId: null, role: 'user', text: userText.trim(), approvalState: null, createdAt: nowIso() };
+    await addGroupMessage(userMsg);
+  }
 
   const allBots = await listBots();
   const otherNames = allBots.map((b) => b.name);
@@ -45,10 +51,11 @@ export async function runGroupMessage(
       await addGroupMessage(msg);
       successful.push({ bot, reply });
     } catch (e) {
-      const reason = e instanceof ProviderError ? e.message : 'That bot could not reply.';
+      // A failed bot reply shows ONLY a number — never a sentence,
+      // never raw provider text. The bot's name is the message label.
       const note: GroupMessage = {
         id: newId(), threadId, botId: bot.id, role: 'system_note',
-        text: `[${bot.name} could not reply] ${reason} — this is not a reply from ${bot.name}, it is a status note.`,
+        text: `Error ${errorCode(e)}`,
         approvalState: null, createdAt: nowIso(),
       };
       await addGroupMessage(note);
