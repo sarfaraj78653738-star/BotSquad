@@ -23,6 +23,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     CREATE TABLE IF NOT EXISTS group_threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS group_members (thread_id TEXT NOT NULL, bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE, PRIMARY KEY (thread_id, bot_id));
     CREATE TABLE IF NOT EXISTS group_messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES group_threads(id) ON DELETE CASCADE, bot_id TEXT REFERENCES bots(id) ON DELETE SET NULL, role TEXT NOT NULL, text TEXT NOT NULL, approval_state TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS model_setups (id TEXT PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL, endpoint TEXT NOT NULL DEFAULT '', context_window INTEGER NOT NULL DEFAULT 8192, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_chats_bot ON chats(bot_id, updated_at);
     CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_group_messages ON group_messages(thread_id, created_at);
@@ -109,6 +110,24 @@ export async function listMessages(chatId: string): Promise<Message[]> {
   const d = await getDb();
   const rows = await d.getAllAsync('SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at ASC', [chatId]);
   return rows.map((r: any) => ({ id: r.id, chatId: r.chat_id, botId: r.bot_id, role: r.role, text: r.text, approvalState: r.approval_state, createdAt: r.created_at }));
+}
+
+// Every Main Chat thread, newest first: the original 'universal-chat'
+// plus every 'universal-<id>' thread a New chat created. A thread with
+// no messages cannot exist (New chat does nothing on an empty thread),
+// so every row here has a last message to show as its snippet.
+export async function listUniversalChats(): Promise<{ id: string; snippet: string; lastAt: string }[]> {
+  const d = await getDb();
+  const rows = await d.getAllAsync(
+    "SELECT chat_id AS id, MAX(created_at) AS last_at FROM messages WHERE chat_id LIKE 'universal-%' GROUP BY chat_id ORDER BY last_at DESC",
+  ) as any[];
+  const out: { id: string; snippet: string; lastAt: string }[] = [];
+  for (const r of rows) {
+    const msgs = await listMessages(r.id);
+    const last = msgs[msgs.length - 1];
+    out.push({ id: r.id, snippet: last ? last.text : 'No messages yet.', lastAt: r.last_at });
+  }
+  return out;
 }
 
 export async function addMessage(m: Message): Promise<void> {
