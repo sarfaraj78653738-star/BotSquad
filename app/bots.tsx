@@ -5,9 +5,11 @@ import { Avatar, Card, Chip } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { deleteBot, listBots, saveBot } from '../src/lib/db';
 import { Bot } from '../src/lib/types';
-import { tokens } from '../src/lib/tokens';
+import { useTokens } from '../src/lib/tokens';
 
 export default function BotsScreen() {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const [bots, setBots] = useState<Bot[]>([]);
   const [search, setSearch] = useState('');
   const refresh = useCallback(() => { listBots(search).then(setBots).catch(() => {}); }, [search]);
@@ -60,7 +62,7 @@ export default function BotsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   actions: { flexDirection: 'row', gap: 20, marginTop: 14 },
   body: { flex: 1, padding: tokens.space.md },
   empty: { color: tokens.textMuted, fontSize: tokens.font.md },
