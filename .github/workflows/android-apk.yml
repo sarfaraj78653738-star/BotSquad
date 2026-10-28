@@ -1,0 +1,59 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# SECURITY FIX 2026-10-28: least privilege for this workflow. It builds a
+# debug APK and uploads it as an artifact — it needs no write access, no
+# secrets, and no release publishing. (Action major-version pins are kept;
+# pinning to full SHAs is a further hardening step, listed as
+# needs-validation in the audit report, because it requires verifying each
+# SHA out of band. No secret is present in this workflow either way.)
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        # NOTE: bun.lock is intentionally not in this repo (it exceeds the
+        # GitHub App file API single-arg limit), so do NOT use --frozen-lockfile here.
+        run: bun install
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Prebuild Android
+        run: CI=1 npx expo prebuild --platform android
+
+      - name: Build debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: teambots-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
