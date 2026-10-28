@@ -21,7 +21,6 @@ export default function BotsScreen() {
         <View style={{ width: 34 }} />
       </View>
       <View style={styles.body}>
-        <Text style={styles.sub}>Each bot has one task — that task is its personality.</Text>
         <TextInput accessibilityLabel="Search bots" onChangeText={setSearch} placeholder="Search bots…" placeholderTextColor={tokens.textMuted} style={styles.search} value={search} />
         <Link href="/bot/new" asChild><Pressable style={styles.new}><Text style={styles.newText}>+ Create a bot</Text></Pressable></Link>
         {bots.length === 0 && (
@@ -41,7 +40,7 @@ export default function BotsScreen() {
                         <Text style={styles.name}>{item.name}</Text>
                         {item.isPinned ? <Chip label="Pinned" /> : null}
                       </View>
-                      <Text style={styles.role}>{item.role} · {item.model}</Text>
+                      <Text style={styles.role}>{item.role}</Text>
                       <Text style={styles.task} numberOfLines={2}>{item.task}</Text>
                     </View>
                   </View>
@@ -55,7 +54,7 @@ export default function BotsScreen() {
             </Card>
           )}
         />
-        <Text style={styles.note}>Bots draft and plan. They send, publish, buy, or delete nothing externally.</Text>
+        <Text style={styles.note}>Bots send nothing externally.</Text>
       </View>
     </View>
   );
