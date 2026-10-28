@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { AdSlot, Button, Card, Field, LoadingRow } from './ui';
+import { AttachButton } from './AttachButton';
+import { ModelPicker } from './ModelPicker';
 import { VoiceButton } from './VoiceButton';
 import { addMemory, addMessage, getBot, getOrCreateChat, getSetting, listBotSkillIds, listBots, listMemory, listMessages, listSkills, saveSkill, setMessageApproval } from '../lib/db';
 import { buildSystemPrompt, extractMemoryNote, looksOutOfTask } from '../lib/prompt';
@@ -9,13 +11,34 @@ import { ProviderError, chatWithBot, fetchPublicPageText } from '../lib/provider
 import { Bot, Message, newId, nowIso } from '../lib/types';
 import { tokens } from '../lib/tokens';
 
-// Shared chat surface used by both Main Chat and a single bot's chat
-// screen. All message, draft-approval, voice, browse and memory logic is
-// the original chat logic, unchanged; only the presentation is new.
-// `topBar` renders the screen's own header (menu + bot switcher on Main
+// Shared chat surface used by Main Chat, a single bot's chat screen,
+// and (in universal mode) the bot-free Main Chat. All message,
+// draft-approval, voice, browse and memory logic is the original chat
+// logic, unchanged; only the presentation is new.
+// `topBar` renders the screen's own header (menu + title on Main
 // Chat, back button + name on a bot chat) so no route name ever leaks.
-export function ChatView({ botId, topBar }: { botId: string; topBar: (bot: Bot | null) => React.ReactNode }) {
-  const [bot, setBot] = useState<Bot | null>(null);
+function makeUniversalBot(): Bot {
+  return {
+    id: 'universal',
+    name: 'Main Chat',
+    role: 'Main Chat',
+    avatarColor: '#E7DCC8',
+    avatarIcon: 'M',
+    task: 'Help the user with whatever they ask',
+    personality: 'Direct and specific',
+    instructions: '',
+    boundaries: 'Never send, publish, buy, or delete anything externally. Drafts need user approval.',
+    provider: 'openai-compatible',
+    model: 'gpt-4o-mini',
+    endpoint: undefined,
+    isPinned: 0,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+}
+
+export function ChatView({ botId, universal, topBar }: { botId?: string; universal?: boolean; topBar: (bot: Bot | null) => React.ReactNode }) {
+  const [bot, setBot] = useState<Bot | null>(() => (universal ? makeUniversalBot() : null));
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatId, setChatId] = useState('');
   const [input, setInput] = useState('');
@@ -30,20 +53,29 @@ export function ChatView({ botId, topBar }: { botId: string; topBar: (bot: Bot |
 
   useEffect(() => {
     (async () => {
-      if (!botId) return;
-      const b = await getBot(botId);
-      setBot(b);
       setWorkLog([]);
       setBrowseUrl('');
       setError('');
+      setAdsRemoved((await getSetting('premium_ads_removed')) === '1');
+      if (universal) {
+        // Universal chat needs no bot and no chats-table row: it uses
+        // the fixed chat id below. addMessage's chats-table updated_at
+        // update simply affects 0 rows, which is fine.
+        setBot(makeUniversalBot());
+        setChatId('universal-chat');
+        setMessages(await listMessages('universal-chat'));
+        return;
+      }
+      if (!botId) return;
+      const b = await getBot(botId);
+      setBot(b);
       if (b) {
         const chat = await getOrCreateChat(b.id);
         setChatId(chat.id);
         setMessages(await listMessages(chat.id));
       }
-      setAdsRemoved((await getSetting('premium_ads_removed')) === '1');
     })().catch(() => {});
-  }, [botId]);
+  }, [botId, universal]);
 
   async function send(text: string) {
     if (!bot || !chatId || !text.trim()) return;
@@ -67,7 +99,7 @@ export function ChatView({ botId, topBar }: { botId: string; topBar: (bot: Bot |
       const assistantMsg: Message = { id: newId(), chatId, botId: bot.id, role: 'assistant', text: reply, approvalState: 'draft', createdAt: nowIso() };
       await addMessage(assistantMsg);
       setMessages([...next, assistantMsg]);
-      setWorkLog((w) => [...w, `Model ${bot.model} via ${bot.provider}; reply saved as DRAFT for approval.`]);
+      setWorkLog((w) => [...w, 'Reply saved as DRAFT for approval.']);
       const note = extractMemoryNote(text, reply);
       if (note) await addMemory(bot.id, note, 'auto_learned');
     } catch (e) {
@@ -105,12 +137,19 @@ export function ChatView({ botId, topBar }: { botId: string; topBar: (bot: Bot |
     }
   }
 
+  function handleAttachment(att: { name: string; size: number | null; kind: 'photo' | 'document' }) {
+    const size = att.size === null ? 'unknown size' : att.size < 1024 ? `${att.size} B` : att.size < 1024 * 1024 ? `${(att.size / 1024).toFixed(1)} KB` : `${(att.size / (1024 * 1024)).toFixed(1)} MB`;
+    // Note only: the file itself is not uploaded or read, and no file
+    // contents are faked. The name travels inside the message text, so
+    // it shows in the chat bubble.
+    void send(`[Attachment: ${att.name} (${size})] — the file itself was not uploaded or read; treat this only as a note that the user attached it.`);
+  }
+
   if (!bot) return <View style={styles.wrap}><Text style={styles.sub}>Loading bot…</Text></View>;
 
   return (
     <View style={styles.wrap}>
       {topBar(bot)}
-      <Text style={styles.roleLine}>{bot.role} · {bot.model} ({bot.provider})</Text>
       <AdSlot visible={!adsRemoved && loading} />
       {error ? <Card><Text style={{ color: tokens.danger }}>{error}</Text></Card> : null}
       <FlatList
@@ -153,6 +192,12 @@ export function ChatView({ botId, topBar }: { botId: string; topBar: (bot: Bot |
       {loading && <LoadingRow label="Bot is working…" />}
       {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
 
+      <View style={styles.moreRow}>
+        <Pressable onPress={() => setToolsOpen((v) => !v)} style={styles.moreButton} accessibilityLabel="More chat tools">
+          <Feather name="more-horizontal" size={20} color={tokens.textMuted} />
+        </Pressable>
+      </View>
+
       {toolsOpen && (
         <ScrollView style={styles.tools} contentContainerStyle={{ paddingBottom: 8 }}>
           <Button title="Save last reply as a skill" variant="secondary" onPress={saveLastReplyAsSkill} />
@@ -170,14 +215,13 @@ export function ChatView({ botId, topBar }: { botId: string; topBar: (bot: Bot |
       )}
 
       <View style={styles.composer}>
-        <Pressable onPress={() => setToolsOpen((v) => !v)} style={styles.toolsButton} accessibilityLabel="Toggle chat tools">
-          <Feather name={toolsOpen ? 'x' : 'plus'} size={20} color={tokens.text} />
-        </Pressable>
+        <AttachButton onAttachment={handleAttachment} disabled={loading} />
+        <ModelPicker />
         <TextInput
           accessibilityLabel="Message"
           multiline
           onChangeText={setInput}
-          placeholder="Message this bot…"
+          placeholder={universal ? 'Message…' : 'Message this bot…'}
           placeholderTextColor={tokens.textMuted}
           style={styles.composerInput}
           value={input}
@@ -206,20 +250,20 @@ const styles = StyleSheet.create({
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
-  composer: { alignItems: 'flex-end', backgroundColor: tokens.bg, borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingHorizontal: tokens.space.md, paddingVertical: 10 },
+  composer: { alignItems: 'center', backgroundColor: tokens.bg, borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   composerInput: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.lg, borderWidth: 1, color: tokens.text, flex: 1, fontSize: tokens.font.md, maxHeight: 120, paddingHorizontal: 14, paddingVertical: 12 },
   empty: { paddingHorizontal: tokens.space.md, paddingVertical: 8 },
   list: { flex: 1 },
   listContent: { padding: tokens.space.md },
+  moreButton: { padding: 6 },
+  moreRow: { alignItems: 'flex-end', paddingHorizontal: tokens.space.md, paddingVertical: 2 },
   note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 8 },
   noteRow: { alignItems: 'center', marginBottom: 16 },
   noteText: { color: tokens.textMuted, fontSize: tokens.font.sm, textAlign: 'center' },
-  roleLine: { color: tokens.textMuted, fontSize: tokens.font.sm, paddingHorizontal: tokens.space.md, paddingBottom: 8 },
   sendButton: { alignItems: 'center', backgroundColor: tokens.accent, borderRadius: 999, height: 48, justifyContent: 'center', width: 48 },
   sendDisabled: { opacity: 0.5 },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md },
   tools: { borderTopColor: tokens.border, borderTopWidth: 1, maxHeight: 280, padding: tokens.space.md },
-  toolsButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, height: 48, justifyContent: 'center', width: 48 },
   userBubble: { backgroundColor: tokens.accent, borderRadius: tokens.radius.lg, maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10 },
   userRow: { alignItems: 'flex-end', marginBottom: 16 },
   userText: { color: tokens.onAccent, fontSize: tokens.font.md, lineHeight: 24 },
