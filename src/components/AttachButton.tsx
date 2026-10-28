@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -15,6 +16,7 @@ export function AttachButton({ onAttachment, disabled, variant }: {
   variant?: 'circle' | 'flat';
 }) {
   const tokens = useTokens();
+  const insets = useSafeAreaInsets();
   const styles = getStyles(tokens);
   const [open, setOpen] = useState(false);
 
@@ -84,7 +86,7 @@ export function AttachButton({ onAttachment, disabled, variant }: {
       </Pressable>
       <Modal animationType="slide" onRequestClose={() => setOpen(false)} transparent visible={open}>
         <Pressable accessibilityLabel="Close attach menu" onPress={() => setOpen(false)} style={styles.backdrop} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 28 }]}>
           <View style={styles.sheetHead}>
             <Text style={styles.sheetTitle}>Add to chat</Text>
             <Pressable accessibilityLabel="Close attach menu" onPress={() => setOpen(false)} style={styles.closeButton}>
