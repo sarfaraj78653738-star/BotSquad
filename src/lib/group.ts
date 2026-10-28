@@ -1,4 +1,4 @@
-import { addGroupMessage, listBotSkillIds, listBots, listGroupMessages, listMemory, listSkills } from './db';
+import { addGroupMessage, getSetting, listBotSkillIds, listBots, listGroupMessages, listMemory, listSkills } from './db';
 import { buildSystemPrompt } from './prompt';
 import { ProviderError, chatWithBot } from './providers';
 import { Bot, GroupMessage, newId, nowIso } from './types';
@@ -31,6 +31,7 @@ export async function runGroupMessage(
   }));
 
   const successful: { bot: Bot; reply: string }[] = [];
+  const profilePrefs = (await getSetting('profile_preferences')) ?? '';
 
   for (const bot of members) {
     onBotWorking?.(bot.name);
@@ -38,7 +39,7 @@ export async function runGroupMessage(
       const memory = await listMemory(bot.id);
       const enabledIds = await listBotSkillIds(bot.id);
       const enabledSkills = (await listSkills()).filter((s) => enabledIds.includes(s.id));
-      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills);
+      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs);
       const reply = await chatWithBot(bot, system, history, userText.trim());
       const msg: GroupMessage = { id: newId(), threadId, botId: bot.id, role: 'assistant', text: reply, approvalState: 'draft', createdAt: nowIso() };
       await addGroupMessage(msg);
