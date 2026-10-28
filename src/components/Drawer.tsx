@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { useTokens } from '../lib/tokens';
@@ -8,8 +9,8 @@ import { useTokens } from '../lib/tokens';
 // hamburger button in each main screen's header. Groups, in order:
 // main navigation, History, Projects/Artifacts, then Settings pinned at
 // the bottom. A hairline divider (theme border token, visible in both
-// light and dark mode) follows EVERY group. Connections, Routines and
-// Browser are NOT drawer items — they live under Settings.
+// light and dark mode) follows EVERY group. Connections and Routines
+// are NOT drawer items — they live under Settings.
 type DrawerItem = { label: string; icon: React.ComponentProps<typeof Feather>['name']; route: string };
 
 const MAIN_ITEMS: DrawerItem[] = [
@@ -59,6 +60,7 @@ export function DrawerProvider({ children }: { children: React.ReactNode }) {
 function DrawerMenu({ onClose }: { onClose: () => void }) {
   const tokens = useTokens();
   const styles = getStyles(tokens);
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -82,7 +84,7 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
   // the panel on the right.)
   return (
     <View style={styles.overlay}>
-      <View style={styles.panel}>
+      <View style={[styles.panel, { paddingTop: insets.top + tokens.space.md }]}>
         <View style={styles.panelHead}>
           <Text style={styles.panelTitle}>TeamBots</Text>
           <Pressable accessibilityLabel="Close menu" onPress={onClose} style={styles.closeButton}>
@@ -113,7 +115,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   itemTextActive: { color: tokens.text, fontWeight: '700' },
   menuButton: { padding: 6 },
   overlay: { bottom: 0, flexDirection: 'row', left: 0, position: 'absolute', right: 0, top: 0, zIndex: 100 },
-  panel: { backgroundColor: tokens.bg, borderRightColor: tokens.border, borderRightWidth: 1, padding: tokens.space.md, width: 300 },
+  panel: { backgroundColor: tokens.bg, borderRightColor: tokens.border, borderRightWidth: 1, paddingBottom: tokens.space.md, paddingHorizontal: tokens.space.md, width: 300 },
   panelHead: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: tokens.space.md },
   panelTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
 });
