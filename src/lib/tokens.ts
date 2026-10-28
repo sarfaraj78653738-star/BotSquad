@@ -13,7 +13,7 @@ export const tokens = {
   danger: '#B3261E',
   success: '#2E7D4F',
   warning: '#9A6700',
-  radius: { sm: 10, md: 16, lg: 24 },
+  radius: { sm: 8, md: 10, lg: 12 },
   space: { xs: 6, sm: 10, md: 16, lg: 24 },
   font: { sm: 14, md: 16, lg: 19, xl: 28 },
 } as const;
