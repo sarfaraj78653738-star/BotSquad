@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { AdSlot, Button, Card, Field, LoadingRow } from './ui';
-import { AttachButton } from './AttachButton';
-import { ModelPicker } from './ModelPicker';
-import { VoiceButton } from './VoiceButton';
+import { ComposerBar } from './ComposerBar';
 import { addMemory, addMessage, getBot, getOrCreateChat, getSetting, listBotSkillIds, listBots, listMemory, listMessages, listSkills, saveSkill, setMessageApproval } from '../lib/db';
 import { buildSystemPrompt, extractMemoryNote, looksOutOfTask } from '../lib/prompt';
+import { saveArtifactFromReply } from '../lib/projects';
 import { ProviderError, chatWithBot, fetchPublicPageText } from '../lib/providers';
 import { Bot, Message, newId, nowIso } from '../lib/types';
-import { tokens } from '../lib/tokens';
+import { useTokens } from '../lib/tokens';
 
 // Shared chat surface used by Main Chat, a single bot's chat screen,
 // and (in universal mode) the bot-free Main Chat. All message,
@@ -38,6 +37,8 @@ function makeUniversalBot(): Bot {
 }
 
 export function ChatView({ botId, universal, topBar }: { botId?: string; universal?: boolean; topBar: (bot: Bot | null) => React.ReactNode }) {
+  const tokens = useTokens();
+  const styles = getStyles(tokens);
   const [bot, setBot] = useState<Bot | null>(() => (universal ? makeUniversalBot() : null));
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatId, setChatId] = useState('');
@@ -90,7 +91,8 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
       const others = (await listBots()).map((b) => b.name);
       const enabledIds = await listBotSkillIds(bot.id);
       const enabledSkills = (await listSkills()).filter((s) => enabledIds.includes(s.id));
-      const system = buildSystemPrompt(bot, memory, others, enabledSkills);
+      const profilePrefs = (await getSetting('profile_preferences')) ?? '';
+      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs);
       const history = next.slice(-10).map((m) => ({ role: m.role, text: m.text }));
       if (looksOutOfTask(bot, text)) {
         setWorkLog((w) => [...w, `Out-of-task hint shown for this message (bot task: ${bot.task})`]);
@@ -174,6 +176,12 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
             <View style={styles.assistantRow}>
               <Text style={styles.botLabel}>{bot.name}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
               <Text style={styles.assistantText}>{item.text}</Text>
+              <Pressable
+                accessibilityLabel="Save as artifact"
+                onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert('Saved', 'Saved to Artifacts.'); }}
+              >
+                <Text style={styles.saveArtifact}>Save as artifact</Text>
+              </Pressable>
               {item.approvalState === 'draft' && (
                 <View style={styles.approval}>
                   <Button title="Approve draft" onPress={async () => { await setMessageApproval(item.id, 'approved'); setMessages(await listMessages(chatId)); }} />
@@ -184,11 +192,6 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
           );
         }}
       />
-      {messages.length === 0 && (
-        <View style={styles.empty}>
-          <Text style={styles.sub}>No messages yet. Say hello, or add your API key in Settings if you have not yet.</Text>
-        </View>
-      )}
       {loading && <LoadingRow label="Bot is working…" />}
       {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
 
@@ -213,45 +216,30 @@ export function ChatView({ botId, universal, topBar }: { botId?: string; univers
         </ScrollView>
       )}
 
-      <View style={styles.composer}>
-        <AttachButton onAttachment={handleAttachment} disabled={loading} />
-        <ModelPicker />
-        <TextInput
-          accessibilityLabel="Message"
-          multiline
+      <View style={styles.composerWrap}>
+        <ComposerBar
+          input={input}
           onChangeText={setInput}
           placeholder={universal ? 'Message…' : 'Message this bot…'}
-          placeholderTextColor={tokens.textMuted}
-          style={styles.composerInput}
-          value={input}
+          loading={loading}
+          onSend={() => { const t = input; setInput(''); voiceBase.current = ''; void send(t); }}
+          onAttachment={handleAttachment}
+          onVoicePartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
+          onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote('Voice transcript inserted — check it, then tap Send. Nothing was sent automatically.'); }}
+          onVoiceError={(m) => { voiceBase.current = ''; setVoiceNote(m); }}
         />
-        <VoiceButton
-          disabled={loading}
-          onPartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
-          onFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote('Voice transcript inserted — check it, then tap Send. Nothing was sent automatically.'); }}
-          onError={(m) => { voiceBase.current = ''; setVoiceNote(m); }}
-        />
-        <Pressable
-          accessibilityLabel="Send message"
-          disabled={loading}
-          onPress={() => { const t = input; setInput(''); voiceBase.current = ''; void send(t); }}
-          style={[styles.sendButton, loading && styles.sendDisabled]}
-        >
-          <Feather name="send" size={18} color={tokens.onAccent} />
-        </Pressable>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   approval: { flexDirection: 'row', gap: 10, marginTop: 12 },
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
-  composer: { alignItems: 'center', backgroundColor: tokens.bg, borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingHorizontal: tokens.space.md, paddingVertical: 10 },
-  composerInput: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.lg, borderWidth: 1, color: tokens.text, flex: 1, fontSize: tokens.font.md, maxHeight: 120, paddingHorizontal: 14, paddingVertical: 12 },
-  empty: { paddingHorizontal: tokens.space.md, paddingVertical: 8 },
+  saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700', marginTop: 8 },
+  composerWrap: { paddingBottom: 12, paddingHorizontal: tokens.space.md, paddingTop: 4 },
   list: { flex: 1 },
   listContent: { padding: tokens.space.md },
   moreButton: { padding: 6 },
@@ -259,8 +247,6 @@ const styles = StyleSheet.create({
   note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 8 },
   noteRow: { alignItems: 'center', marginBottom: 16 },
   noteText: { color: tokens.textMuted, fontSize: tokens.font.sm, textAlign: 'center' },
-  sendButton: { alignItems: 'center', backgroundColor: tokens.accent, borderRadius: 999, height: 48, justifyContent: 'center', width: 48 },
-  sendDisabled: { opacity: 0.5 },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md },
   tools: { borderTopColor: tokens.border, borderTopWidth: 1, maxHeight: 280, padding: tokens.space.md },
   userBubble: { backgroundColor: tokens.accent, borderRadius: tokens.radius.lg, maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10 },
