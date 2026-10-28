@@ -3,7 +3,8 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Avatar, Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
-import { listBots, listChats, listGroupMessages, listGroupThreads, listMessages } from '../src/lib/db';
+import { listBots, listChats, listGroupMessages, listGroupThreads, listMessages, listUniversalChats } from '../src/lib/db';
+import { getUniversalChatId } from '../src/lib/universal';
 import { Bot, Chat, GroupThread } from '../src/lib/types';
 import { useTokens } from '../src/lib/tokens';
 
@@ -12,18 +13,17 @@ type GroupRow = { thread: GroupThread; snippet: string };
 
 // History, kept strictly separate, as the user asked: Main Chat
 // history, Bots history, and Group Chat history are three separate
-// tabs — nothing is mixed. Main Chat shows the universal chat
-// (fixed id 'universal-chat', opened from '/'); Bots shows every
-// bot's own chat separately; Group shows group threads separately.
-// A bot chat opens that bot's chat screen; a group thread opens
-// the Group screen with that thread preselected via its route
-// parameter.
+// tabs — nothing is mixed. Main Chat lists every Main Chat thread
+// (the original thread plus every thread a New chat created), newest
+// first; tapping one reopens it in Main Chat. Bots shows every bot's
+// own chat separately; Group shows group threads separately.
 type Tab = 'main' | 'bots' | 'group';
 export default function HistoryScreen() {
   const tokens = useTokens();
   const styles = getStyles(tokens);
   const router = useRouter();
-  const [universalSnippet, setUniversalSnippet] = useState('No messages yet.');
+  const [universalChats, setUniversalChats] = useState<{ id: string; snippet: string; lastAt: string }[]>([]);
+  const [currentUniversalId, setCurrentUniversalId] = useState('');
   const [botRows, setBotRows] = useState<BotChatRow[]>([]);
   const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
   const [tab, setTab] = useState<Tab>('main');
@@ -31,9 +31,8 @@ export default function HistoryScreen() {
   const refresh = useCallback(() => {
     (async () => {
       const bots = await listBots();
-      const universalMsgs = await listMessages('universal-chat').catch(() => []);
-      const universalLast = universalMsgs[universalMsgs.length - 1];
-      setUniversalSnippet(universalLast ? universalLast.text : 'No messages yet.');
+      setUniversalChats(await listUniversalChats().catch(() => []));
+      setCurrentUniversalId(await getUniversalChatId().catch(() => ''));
       const chats = await listChats();
       const rows: BotChatRow[] = [];
       for (const chat of chats) {
@@ -70,17 +69,22 @@ export default function HistoryScreen() {
           ))}
         </View>
         {tab === 'main' && (
-          <Pressable onPress={() => router.replace('/')}>
-            <Card>
-              <View style={styles.row}>
-                <Avatar color="#E7DCC8" label="Main Chat" size={40} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>Main Chat</Text>
-                  <Text style={styles.snippet} numberOfLines={2}>{universalSnippet}</Text>
-                </View>
-              </View>
-            </Card>
-          </Pressable>
+          <>
+            {universalChats.length === 0 && <Card><Text style={styles.sub}>No Main Chat messages yet.</Text></Card>}
+            {universalChats.map((c) => (
+              <Pressable key={c.id} onPress={() => router.push({ pathname: '/', params: { chatId: c.id } } as never)}>
+                <Card>
+                  <View style={styles.row}>
+                    <Avatar color="#E7DCC8" label="Main Chat" size={40} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.name}>Main Chat{c.id === currentUniversalId ? ' · Current' : ''}</Text>
+                      <Text style={styles.snippet} numberOfLines={2}>{c.snippet}</Text>
+                    </View>
+                  </View>
+                </Card>
+              </Pressable>
+            ))}
+          </>
         )}
         {tab === 'bots' && (
           <>
