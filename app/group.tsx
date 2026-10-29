@@ -46,6 +46,14 @@ export default function GroupScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPinned, setMenuPinned] = useState(false);
   const voiceBase = useRef('');
+  // Agent approval card, same as ChatView: an MCP or service call
+  // pauses the bot loop here until the user taps Approve or Reject
+  // for that exact call. Nothing runs without that tap.
+  const [pendingApproval, setPendingApproval] = useState<{ summary: string; preview: string; resolve: (ok: boolean) => void } | null>(null);
+
+  function requestApproval(summary: string, preview: string): Promise<boolean> {
+    return new Promise((resolve) => setPendingApproval({ summary, preview, resolve }));
+  }
   const appliedThreadId = useRef<string | null>(null);
   // Live in-chat browser for the group thread, same rules as ChatView:
   // user intent opens it, bot [BROWSER ...] commands drive it, tap/type
@@ -99,7 +107,7 @@ export default function GroupScreen() {
     if (!textOverride) setInput('');
     try {
       const prevIds = new Set(messages.map((m) => m.id));
-      await runGroupMessage(selected.id, members, text, setWorkingBot, reuseUser);
+      await runGroupMessage(selected.id, members, text, setWorkingBot, reuseUser, requestApproval);
       const updated = await listGroupMessages(selected.id);
       setMessages(updated);
       // Bot browser commands in the new replies drive the panel.
@@ -296,6 +304,17 @@ export default function GroupScreen() {
             </View>
           ) : null}
           <LiveBrowserPanel ref={browserRef} botName="Group" onExpandedChange={setBrowserExpanded} />
+          {pendingApproval ? (
+            <View style={styles.approvalCard}>
+              <Text style={styles.approvalTitle}>Agent wants to run a tool</Text>
+              <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
+              <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
+              <View style={styles.approvalRow}>
+                <Button title="Approve" onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
+                <Button title="Reject" variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
+              </View>
+            </View>
+          ) : null}
           <ComposerBar
             input={input}
             onChangeText={setInput}
@@ -314,6 +333,11 @@ export default function GroupScreen() {
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
+  approvalCard: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, marginBottom: 8, padding: tokens.space.md },
+  approvalPreview: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 6 },
+  approvalRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  approvalSummary: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600', marginTop: 4 },
+  approvalTitle: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800' },
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   body: { flex: 1, padding: tokens.space.md },

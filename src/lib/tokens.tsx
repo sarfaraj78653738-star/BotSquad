@@ -82,16 +82,23 @@ export const tokens = lightTokens;
 
 export type ColorMode = 'system' | 'light' | 'dark';
 export type FontStyle = 'default' | 'system';
+// App language (user order 2026-10-29): English or Hindi, chosen in
+// Settings → General → Language. Stored like color/font prefs; the
+// drawer and Settings read it via useLanguage + t() in lib/i18n.
+export type Language = 'en' | 'hi';
 
 // Stored preference keys (SQLite settings table). Both default when
 // nothing is stored: color mode defaults to System, font style to Default.
 export const COLOR_MODE_KEY = 'color_mode';
 export const FONT_STYLE_KEY = 'font_style';
+export const LANGUAGE_KEY = 'language';
 
 const ColorModeContext = createContext<ColorMode>('system');
 const SetColorModeContext = createContext<(m: ColorMode) => void>(() => {});
 const FontStyleContext = createContext<FontStyle>('default');
 const SetFontStyleContext = createContext<(f: FontStyle) => void>(() => {});
+const LanguageContext = createContext<Language>('en');
+const SetLanguageContext = createContext<(l: Language) => void>(() => {});
 
 // Font style mapping (the only real distinction this app can offer
 // without a custom font family): Default uses the app's designed sizes
@@ -108,12 +115,15 @@ function applyFontStyle(f: FontStyle) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [colorMode, setColorModeState] = useState<ColorMode>('system');
   const [fontStyle, setFontStyleState] = useState<FontStyle>('default');
+  const [language, setLanguageState] = useState<Language>('en');
   useEffect(() => {
     (async () => {
       const cm = await getSetting(COLOR_MODE_KEY);
       if (cm === 'light' || cm === 'dark' || cm === 'system') setColorModeState(cm);
       const fs = await getSetting(FONT_STYLE_KEY);
       if (fs === 'system' || fs === 'default') setFontStyleState(fs);
+      const lang = await getSetting(LANGUAGE_KEY);
+      if (lang === 'en' || lang === 'hi') setLanguageState(lang);
     })().catch(() => {});
   }, []);
   useEffect(() => { applyFontStyle(fontStyle); }, [fontStyle]);
@@ -125,11 +135,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setFontStyleState(f);
     setSetting(FONT_STYLE_KEY, f).catch(() => {});
   }, []);
+  const setLanguage = useCallback((l: Language) => {
+    setLanguageState(l);
+    setSetting(LANGUAGE_KEY, l).catch(() => {});
+  }, []);
   return (
     <ColorModeContext.Provider value={colorMode}>
       <SetColorModeContext.Provider value={setColorMode}>
         <FontStyleContext.Provider value={fontStyle}>
-          <SetFontStyleContext.Provider value={setFontStyle}>{children}</SetFontStyleContext.Provider>
+          <SetFontStyleContext.Provider value={setFontStyle}>
+            <LanguageContext.Provider value={language}>
+              <SetLanguageContext.Provider value={setLanguage}>{children}</SetLanguageContext.Provider>
+            </LanguageContext.Provider>
+          </SetFontStyleContext.Provider>
         </FontStyleContext.Provider>
       </SetColorModeContext.Provider>
     </ColorModeContext.Provider>
@@ -142,6 +160,10 @@ export function useColorMode(): [ColorMode, (m: ColorMode) => void] {
 
 export function useFontStyle(): [FontStyle, (f: FontStyle) => void] {
   return [useContext(FontStyleContext), useContext(SetFontStyleContext)];
+}
+
+export function useLanguage(): [Language, (l: Language) => void] {
+  return [useContext(LanguageContext), useContext(SetLanguageContext)];
 }
 
 export function useTokens(): ThemeTokens {

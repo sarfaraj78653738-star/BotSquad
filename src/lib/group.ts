@@ -5,6 +5,7 @@ import { errorCode } from './errors';
 import { parseSkillCallout } from './skillCallout';
 import { mcpPromptBlock, parseMcpCallout } from './mcpCallout';
 import { listMcpTools } from './mcp';
+import { executeAgentTool, parseToolCalls, stripToolBlocks } from './agent';
 import { Bot, GroupMessage, newId, nowIso } from './types';
 
 // Group chat runner: each selected bot replies IN TURN, in the order the
@@ -14,12 +15,17 @@ import { Bot, GroupMessage, newId, nowIso } from './types';
 // gets a clear system_note turn instead of an invented answer.
 // There is NO summary at the end (user order 2026-10-29): the bots'
 // replies are the thread, nothing extra is posted after them.
+// Tool parity (user order 2026-10-29): like Main and single-bot chats,
+// each bot can run MCP tools and its enabled connections in an
+// approval-gated loop (approval card lives in group.tsx); skills work
+// via callout. Workspace files and deploys stay Main Chat only.
 export async function runGroupMessage(
   threadId: string,
   members: Bot[],
   userText: string,
   onBotWorking?: (botName: string | null) => void,
   skipUserMessage = false,
+  requestApproval?: (summary: string, preview: string) => Promise<boolean>,
 ): Promise<void> {
   // skipUserMessage: a Retry resends the failed text without adding a
   // second copy of the user's bubble to the thread.
@@ -36,14 +42,14 @@ export async function runGroupMessage(
   const effectiveText = callout.skill ? callout.cleanText : userText.trim();
   // MCP callout, same model: a server named at the start applies to
   // every bot for this turn only; its tools are fetched live and
-  // appended to each bot's prompt. Group chats are single-reply, so
-  // tools are listed for reference — running happens in Main Chat.
+  // appended to each bot's prompt, and each bot's loop can run them
+  // with mcp_call (approval card in group.tsx).
   const mcpCallout = parseMcpCallout(effectiveText, await listMcpServers());
   const mcpEffectiveText = mcpCallout.server ? mcpCallout.cleanText : effectiveText;
   let mcpBlock = '';
   if (mcpCallout.server) {
     const mcpTools = await listMcpTools(mcpCallout.server.id, mcpCallout.server.url).catch(() => []);
-    mcpBlock = mcpPromptBlock(mcpCallout.server.name, mcpTools, false);
+    mcpBlock = mcpPromptBlock(mcpCallout.server.name, mcpTools, true);
   }
   const prior = await listGroupMessages(threadId);
   // History for each bot: last 10 turns, assistant turns labelled by bot so
@@ -65,7 +71,56 @@ export async function runGroupMessage(
       const connIds = await listBotConnectionIds(bot.id).catch(() => [] as string[]);
       const enabledConns = allConns.filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }));
       const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, enabledConns) + mcpBlock;
-      const reply = await chatWithBot(bot, system, history, mcpEffectiveText);
+      // Same tool loop as single-bot chats, per bot: only mcp_call
+      // and service_request, each approval-gated. Guards: mcp_call
+      // only for the server called out this turn; service_request
+      // only for a service enabled for this bot. Without an approval
+      // callback (should not happen from group.tsx), gated calls are
+      // refused rather than run blind.
+      let botToolsPrompt = '';
+      if (enabledConns.length) {
+        botToolsPrompt = `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
+      }
+      const approve = requestApproval ?? (async () => false);
+      let reply = await chatWithBot(bot, system + botToolsPrompt, history, mcpEffectiveText);
+      if (mcpCallout.server || enabledConns.length) {
+        const loopHistory: { role: string; text: string }[] = [];
+        const actionsTaken: string[] = [];
+        for (let step = 0; step < 8; step++) {
+          const calls = parseToolCalls(reply).filter((c) => c.name === 'mcp_call' || c.name === 'service_request');
+          if (calls.length === 0) break;
+          const results: string[] = [];
+          for (const call of calls) {
+            const argStr = (k: string) => typeof call.args[k] === 'string' ? call.args[k] as string : '';
+            let result: string;
+            if (call.name === 'mcp_call') {
+              const srv = argStr('server');
+              if (!mcpCallout.server || srv.toLowerCase() !== mcpCallout.server.name.toLowerCase()) {
+                result = `Error: mcp_call is only allowed for the server called out this turn${mcpCallout.server ? ` ("${mcpCallout.server.name}")` : ' (none called out)'}.`;
+              } else {
+                result = await executeAgentTool(call, approve);
+              }
+              actionsTaken.push(`mcp_call ${argStr('tool')}`);
+            } else {
+              const svc = argStr('service');
+              const allowed = enabledConns.some((c) => c.service.toLowerCase() === svc.toLowerCase() || c.name.toLowerCase() === svc.toLowerCase());
+              if (!allowed) {
+                result = `Error: service "${svc}" is not enabled for this bot.`;
+              } else {
+                result = await executeAgentTool(call, approve);
+              }
+              actionsTaken.push(`service_request ${svc} ${argStr('path')}`);
+            }
+            results.push(`[Tool ${call.name} result]\n${result}`);
+          }
+          loopHistory.push({ role: 'assistant', text: reply });
+          loopHistory.push({ role: 'user', text: results.join('\n\n') });
+          if (step === 7) break;
+          reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another MCP or service call, emit one tool block; otherwise give your final reply with no tool block.');
+        }
+        reply = stripToolBlocks(reply);
+        if (!reply) reply = actionsTaken.length ? `Done. Used: ${actionsTaken.join('; ')}.` : 'Done.';
+      }
       // A reply is delivered content, not a draft (same as Main/Bot
       // chats): no approval gate, no "(draft)" label.
       const msg: GroupMessage = { id: newId(), threadId, botId: bot.id, role: 'assistant', text: reply, approvalState: null, createdAt: nowIso() };

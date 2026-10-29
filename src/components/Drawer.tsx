@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { newId } from '../lib/types';
-import { useTokens } from '../lib/tokens';
+import { useLanguage, useTokens } from '../lib/tokens';
+import { t } from '../lib/i18n';
 
 // The app's only navigation control: a slide-over drawer opened from the
 // hamburger button in each main screen's header. Groups, in order:
@@ -12,25 +13,25 @@ import { useTokens } from '../lib/tokens';
 // the bottom. A hairline divider (theme border token, visible in both
 // light and dark mode) follows EVERY group. Connections and Routines
 // are NOT drawer items — they live under Settings.
-type DrawerItem = { label: string; icon: React.ComponentProps<typeof Feather>['name']; route: string };
+type DrawerItem = { labelKey: string; icon: React.ComponentProps<typeof Feather>['name']; route: string };
 
 const MAIN_ITEMS: DrawerItem[] = [
-  { label: 'Main Chat', icon: 'message-square', route: '/' },
-  { label: 'Bots', icon: 'users', route: '/bots' },
-  { label: 'Group', icon: 'message-circle', route: '/group' },
+  { labelKey: 'mainChat', icon: 'message-square', route: '/' },
+  { labelKey: 'bots', icon: 'users', route: '/bots' },
+  { labelKey: 'group', icon: 'message-circle', route: '/group' },
 ];
 
 const HISTORY_ITEMS: DrawerItem[] = [
-  { label: 'History', icon: 'archive', route: '/history' },
+  { labelKey: 'history', icon: 'archive', route: '/history' },
 ];
 
 const WORK_ITEMS: DrawerItem[] = [
-  { label: 'Projects', icon: 'folder', route: '/projects' },
-  { label: 'Artifacts', icon: 'file-text', route: '/artifacts' },
-  { label: 'Workspace', icon: 'code', route: '/workspace' },
+  { labelKey: 'projects', icon: 'folder', route: '/projects' },
+  { labelKey: 'artifacts', icon: 'file-text', route: '/artifacts' },
+  { labelKey: 'workspace', icon: 'code', route: '/workspace' },
 ];
 
-const SETTINGS_ITEM: DrawerItem = { label: 'Settings', icon: 'settings', route: '/settings' };
+const SETTINGS_ITEM: DrawerItem = { labelKey: 'settings', icon: 'settings', route: '/settings' };
 
 const DrawerContext = createContext<{ open: () => void; close: () => void }>({ open: () => {}, close: () => {} });
 
@@ -65,6 +66,7 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
+  const [language] = useLanguage();
 
   function go(route: string) {
     onClose();
@@ -76,7 +78,7 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
     return (
       <Pressable key={item.route} onPress={() => go(item.route)} style={[styles.item, active && styles.itemActive]}>
         <Feather name={item.icon} size={20} color={active ? tokens.text : tokens.textMuted} />
-        <Text style={[styles.itemText, active && styles.itemTextActive]}>{item.label}</Text>
+        <Text style={[styles.itemText, active && styles.itemTextActive]}>{t(language, item.labelKey)}</Text>
       </Pressable>
     );
   }
@@ -107,7 +109,7 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
           style={styles.newChatButton}
         >
           <Feather name="plus" size={18} color={tokens.onAccent} />
-          <Text style={styles.newChatText}>New chat</Text>
+          <Text style={styles.newChatText}>{t(language, 'newChat')}</Text>
         </Pressable>
         {renderItem(SETTINGS_ITEM)}
       </View>

@@ -7,7 +7,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
-import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../src/lib/tokens';
+import { ColorMode, FontStyle, Language, useColorMode, useFontStyle, useLanguage, useTokens } from '../src/lib/tokens';
+import { LANGUAGE_OPTIONS, t } from '../src/lib/i18n';
 
 // Settings is the hub, laid out as clean grouped rows (icon, title,
 // short subtitle). Group 1 is the person + device: Profile, Color mode,
@@ -18,28 +19,28 @@ import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../
 // Capabilities toggles (no code execution, no web search toggle, no
 // memory-from-chats toggle — TeamBots has none of those), no
 // Notifications toggle (no notification system), no Time & focus.
-const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
-  { label: 'Model setup', detail: 'Providers, keys, and saved models', icon: 'cpu', route: '/model-setup' },
-  { label: 'Login', detail: 'Google sign-in (optional)', icon: 'user', route: '/login' },
-  { label: 'Main Chat avatar', detail: 'Pick Main Chat\'s avatar', icon: 'smile', route: '/main-avatar' },
-  { label: 'Connections', detail: 'Add and enable connections', icon: 'layers', route: '/connect' },
-  { label: 'Skills', detail: 'Instruction templates', icon: 'zap', route: '/skills' },
-  { label: 'Plugins', detail: 'Installed plugin definitions', icon: 'package', route: '/plugins' },
-  { label: 'MCP servers', detail: 'HTTP/SSE tool servers', icon: 'server', route: '/mcp' },
-  { label: 'GitHub install', detail: 'Install skills, plugins, MCP servers', icon: 'github', route: '/github-install' },
-  { label: 'Routines', detail: 'Scheduled skills and routines', icon: 'clock', route: '/routines' },
-  { label: 'Legal', detail: 'Privacy, terms, ads, refunds & feedback', icon: 'shield', route: '/legal' },
+const MENU: { labelKey: string; detailKey: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
+  { labelKey: 'modelSetup', detailKey: 'modelSetupDetail', icon: 'cpu', route: '/model-setup' },
+  { labelKey: 'login', detailKey: 'loginDetail', icon: 'user', route: '/login' },
+  { labelKey: 'mainAvatar', detailKey: 'mainAvatarDetail', icon: 'smile', route: '/main-avatar' },
+  { labelKey: 'connections', detailKey: 'connectionsDetail', icon: 'layers', route: '/connect' },
+  { labelKey: 'skills', detailKey: 'skillsDetail', icon: 'zap', route: '/skills' },
+  { labelKey: 'plugins', detailKey: 'pluginsDetail', icon: 'package', route: '/plugins' },
+  { labelKey: 'mcpServers', detailKey: 'mcpServersDetail', icon: 'server', route: '/mcp' },
+  { labelKey: 'githubInstall', detailKey: 'githubInstallDetail', icon: 'github', route: '/github-install' },
+  { labelKey: 'routines', detailKey: 'routinesDetail', icon: 'clock', route: '/routines' },
+  { labelKey: 'legal', detailKey: 'legalDetail', icon: 'shield', route: '/legal' },
 ];
 
-const COLOR_OPTIONS: { id: ColorMode; label: string; detail: string }[] = [
-  { id: 'system', label: 'System', detail: 'Follows your phone' },
-  { id: 'light', label: 'Light', detail: 'Always light' },
-  { id: 'dark', label: 'Dark', detail: 'Always dark' },
+const COLOR_OPTIONS: { id: ColorMode; labelKey: string; detailKey: string }[] = [
+  { id: 'system', labelKey: 'colorSystem', detailKey: 'colorSystemDetail' },
+  { id: 'light', labelKey: 'colorLight', detailKey: 'colorLightDetail' },
+  { id: 'dark', labelKey: 'colorDark', detailKey: 'colorDarkDetail' },
 ];
 
-const FONT_OPTIONS: { id: FontStyle; label: string; detail: string }[] = [
-  { id: 'default', label: 'Default', detail: "App's designed sizes" },
-  { id: 'system', label: 'System', detail: "Follow your device's text size" },
+const FONT_OPTIONS: { id: FontStyle; labelKey: string; detailKey: string }[] = [
+  { id: 'default', labelKey: 'fontDefault', detailKey: 'fontDefaultDetail' },
+  { id: 'system', labelKey: 'fontSystem', detailKey: 'fontSystemDetail' },
 ];
 
 // Small bottom sheet used by the Color mode and Font style rows. Same
@@ -83,7 +84,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const [colorMode, setColorMode] = useColorMode();
   const [fontStyle, setFontStyle] = useFontStyle();
-  const [picker, setPicker] = useState<'color' | 'font' | null>(null);
+  const [language, setLanguage] = useLanguage();
+  const [picker, setPicker] = useState<'color' | 'font' | 'language' | null>(null);
   const [permText, setPermText] = useState('Open system settings to review');
 
 
@@ -171,31 +173,35 @@ export default function SettingsScreen() {
   }, []);
 
 
-  const colorLabel = COLOR_OPTIONS.find((o) => o.id === colorMode)?.label ?? 'System';
-  const fontLabel = FONT_OPTIONS.find((o) => o.id === fontStyle)?.label ?? 'Default';
+  const colorOptions = COLOR_OPTIONS.map((o) => ({ id: o.id, label: t(language, o.labelKey), detail: t(language, o.detailKey) }));
+  const fontOptions = FONT_OPTIONS.map((o) => ({ id: o.id, label: t(language, o.labelKey), detail: t(language, o.detailKey) }));
+  const languageOptions = LANGUAGE_OPTIONS.map((o) => ({ id: o.id, label: o.label, detail: '' }));
+  const colorLabel = colorOptions.find((o) => o.id === colorMode)?.label ?? 'System';
+  const fontLabel = fontOptions.find((o) => o.id === fontStyle)?.label ?? 'Default';
+  const languageLabel = LANGUAGE_OPTIONS.find((o) => o.id === language)?.label ?? 'English';
 
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
         <MenuButton />
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={styles.headerTitle}>{t(language, 'settings')}</Text>
         <View style={{ width: 34 }} />
       </View>
       <ScrollView style={styles.body}>
-        <Text style={styles.sectionTitle}>General</Text>
+        <Text style={styles.sectionTitle}>{t(language, 'general')}</Text>
         <Card>
           <Pressable onPress={() => router.push('/profile' as never)} style={styles.menuRow}>
             <Feather name="user" size={20} color={tokens.textMuted} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>Profile</Text>
-              <Text style={styles.menuDetail}>Name, photo, and preferences</Text>
+              <Text style={styles.menuLabel}>{t(language, 'profile')}</Text>
+              <Text style={styles.menuDetail}>{t(language, 'profileDetail')}</Text>
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
           </Pressable>
           <Pressable onPress={() => setPicker('color')} style={[styles.menuRow, styles.menuRowDivider]}>
             <Feather name="moon" size={20} color={tokens.textMuted} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>Color mode</Text>
+              <Text style={styles.menuLabel}>{t(language, 'colorMode')}</Text>
               <Text style={styles.menuDetail}>{colorLabel}</Text>
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
@@ -203,7 +209,7 @@ export default function SettingsScreen() {
           <Pressable onPress={() => setPicker('font')} style={[styles.menuRow, styles.menuRowDivider]}>
             <Feather name="type" size={20} color={tokens.textMuted} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>Font style</Text>
+              <Text style={styles.menuLabel}>{t(language, 'fontStyle')}</Text>
               <Text style={styles.menuDetail}>{fontLabel}</Text>
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
@@ -211,7 +217,7 @@ export default function SettingsScreen() {
           <Pressable onPress={runPermissionFlow} style={[styles.menuRow, styles.menuRowDivider]}>
             <Feather name="shield" size={20} color={tokens.textMuted} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>Permissions</Text>
+              <Text style={styles.menuLabel}>{t(language, 'permissions')}</Text>
               <Text style={styles.menuDetail}>{permText}</Text>
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
@@ -219,20 +225,28 @@ export default function SettingsScreen() {
           <Pressable onPress={() => router.push('/ads-payments' as never)} style={[styles.menuRow, styles.menuRowDivider]}>
             <Feather name="credit-card" size={20} color={tokens.textMuted} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>Ads & payments</Text>
-              <Text style={styles.menuDetail}>Plans and premium</Text>
+              <Text style={styles.menuLabel}>{t(language, 'adsPayments')}</Text>
+              <Text style={styles.menuDetail}>{t(language, 'adsPaymentsDetail')}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => setPicker('language')} style={[styles.menuRow, styles.menuRowDivider]}>
+            <Feather name="globe" size={20} color={tokens.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>{t(language, 'language')}</Text>
+              <Text style={styles.menuDetail}>{languageLabel}</Text>
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
           </Pressable>
         </Card>
-        <Text style={styles.sectionTitle}>Tools</Text>
+        <Text style={styles.sectionTitle}>{t(language, 'tools')}</Text>
         <Card>
           {MENU.map((m, i) => (
             <Pressable key={m.route} onPress={() => router.push(m.route as never)} style={[styles.menuRow, i > 0 && styles.menuRowDivider]}>
               <Feather name={m.icon} size={20} color={tokens.textMuted} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.menuLabel}>{m.label}</Text>
-                <Text style={styles.menuDetail}>{m.detail}</Text>
+                <Text style={styles.menuLabel}>{t(language, m.labelKey)}</Text>
+                <Text style={styles.menuDetail}>{t(language, m.detailKey)}</Text>
               </View>
               <Feather name="chevron-right" size={20} color={tokens.textMuted} />
             </Pressable>
@@ -241,18 +255,26 @@ export default function SettingsScreen() {
       </ScrollView>
       <OptionSheet
         open={picker === 'color'}
-        title="Color mode"
-        options={COLOR_OPTIONS}
+        title={t(language, 'colorMode')}
+        options={colorOptions}
         selected={colorMode}
         onSelect={(id) => setColorMode(id as ColorMode)}
         onClose={() => setPicker(null)}
       />
       <OptionSheet
         open={picker === 'font'}
-        title="Font style"
-        options={FONT_OPTIONS}
+        title={t(language, 'fontStyle')}
+        options={fontOptions}
         selected={fontStyle}
         onSelect={(id) => setFontStyle(id as FontStyle)}
+        onClose={() => setPicker(null)}
+      />
+      <OptionSheet
+        open={picker === 'language'}
+        title={t(language, 'language')}
+        options={languageOptions}
+        selected={language}
+        onSelect={(id) => setLanguage(id as Language)}
         onClose={() => setPicker(null)}
       />
     </View>

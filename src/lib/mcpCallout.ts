@@ -46,16 +46,17 @@ export function parseMcpCallout(text: string, servers: McpServer[]): { server: M
 }
 
 // Prompt block for a called-out server, appended for this turn only.
-// runnable is true only in Main Chat, where the agent loop has the
-// mcp_call tool; bot and group chats are single-reply, so there the
-// tools are listed for reference and no run is promised.
+// runnable is true in Main Chat and single-bot chats, where the
+// agent loop has the mcp_call tool; group chats are single-reply
+// with no approval card, so there the tools are listed for
+// reference and no run is promised.
 export function mcpPromptBlock(serverName: string, tools: McpTool[], runnable: boolean): string {
   if (!tools.length) {
     return `\n\n[MCP SERVER — ${serverName} (called out this turn). Its tool list could not be loaded; do not invent tools for it.]`;
   }
   const list = tools.map((t) => `${t.name}: ${t.description || 'No description.'}`).join('; ');
   const runLine = runnable
-    ? ` To run one, emit an mcp_call tool block; every call waits for the user's approval.`
+    ? ` To run one, emit a fenced block:\n\`\`\`tool\n{"name": "mcp_call", "args": {"server": "${serverName}", "tool": "<tool>", "args": {}}}\n\`\`\`\nEvery call waits for the user's approval.`
     : '';
   return `\n\n[MCP SERVER — ${serverName} (called out this turn). Tools: ${list}.${runLine}]`;
 }

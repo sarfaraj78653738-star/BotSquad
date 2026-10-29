@@ -257,14 +257,15 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       const effectiveText = callout.skill ? callout.cleanText : text.trim();
       // MCP callout, same model as skills: a server named at the start
       // of the message applies to this turn only, in every chat. Its
-      // tools are fetched live and appended to the prompt; in Main
-      // Chat the agent loop can then run one with mcp_call.
+      // tools are fetched live and appended to the prompt; in Main,
+      // bot, and group chats the agent loop can then run one with
+      // mcp_call (each surface has its own approval card).
       const mcpCallout = parseMcpCallout(effectiveText, await listMcpServers());
       const mcpEffectiveText = mcpCallout.server ? mcpCallout.cleanText : effectiveText;
       let mcpBlock = '';
       if (mcpCallout.server) {
         const mcpTools = await listMcpTools(mcpCallout.server.id, mcpCallout.server.url).catch(() => []);
-        mcpBlock = mcpPromptBlock(mcpCallout.server.name, mcpTools, universal === true);
+        mcpBlock = mcpPromptBlock(mcpCallout.server.name, mcpTools, true);
       }
       const profilePrefs = (await getSetting('profile_preferences')) ?? '';
       const connIds = universal ? [] : await listBotConnectionIds(bot.id);
@@ -277,8 +278,10 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       // threads' recent context, and it can work with workspace files
       // and public web pages in a multi-step loop. A plain question
       // still gets a plain reply — the loop only engages when the
-      // model emits a tool block for a real task. Bot chats keep the
-      // single-reply behaviour they were built for.
+      // model emits a tool block for a real task. Bot chats run the
+      // same kind of loop for MCP and connected services only (user
+      // order 2026-10-29: MCP, connectors, skills in every chat, not
+      // just Main Chat); workspace files and deploys stay Main only.
       let finalReply: string;
       if (universal) {
         let systemFull = system;
@@ -312,12 +315,64 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         // without the user approving that exact action.
         for (const action of parseBrowserCommands(finalReply)) browserRef.current?.requestAction(action);
       } else {
-        const reply = await chatWithBot(bot, system, history, mcpEffectiveText);
-        // Bot browser commands in the reply drive the panel. Tap/type
+        // Bot chats are agents too (user order 2026-10-29): a bot can
+        // run MCP tools and its enabled connections, not just Main
+        // Chat. Skills already work here via callout. The loop runs
+        // ONLY mcp_call and service_request, each approval-gated;
+        // file and deploy tools stay Main Chat only, and any other
+        // tool block is stripped, never executed. Guards: mcp_call
+        // only for the server called out this turn; service_request
+        // only for a service enabled for this bot — anything else
+        // returns an error result and never executes.
+        let botToolsPrompt = '';
+        if (enabledConns.length) {
+          botToolsPrompt = `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
+        }
+        let reply = await chatWithBot(bot, system + botToolsPrompt, history, mcpEffectiveText);
+        if (mcpCallout.server || enabledConns.length) {
+          const loopHistory: { role: string; text: string }[] = [];
+          const actionsTaken: string[] = [];
+          for (let step = 0; step < 8; step++) {
+            const calls = parseToolCalls(reply).filter((c) => c.name === 'mcp_call' || c.name === 'service_request');
+            if (calls.length === 0) break;
+            const results: string[] = [];
+            for (const call of calls) {
+              const argStr = (k: string) => typeof call.args[k] === 'string' ? call.args[k] as string : '';
+              let result: string;
+              if (call.name === 'mcp_call') {
+                const srv = argStr('server');
+                if (!mcpCallout.server || srv.toLowerCase() !== mcpCallout.server.name.toLowerCase()) {
+                  result = `Error: mcp_call is only allowed for the server called out this turn${mcpCallout.server ? ` ("${mcpCallout.server.name}")` : ' (none called out)'}.`;
+                } else {
+                  result = await executeAgentTool(call, requestApproval);
+                }
+                actionsTaken.push(`mcp_call ${argStr('tool')}`);
+              } else {
+                const svc = argStr('service');
+                const allowed = enabledConns.some((c) => c.service.toLowerCase() === svc.toLowerCase() || c.name.toLowerCase() === svc.toLowerCase());
+                if (!allowed) {
+                  result = `Error: service "${svc}" is not enabled for this bot.`;
+                } else {
+                  result = await executeAgentTool(call, requestApproval);
+                }
+                actionsTaken.push(`service_request ${svc} ${argStr('path')}`);
+              }
+              results.push(`[Tool ${call.name} result]\n${result}`);
+            }
+            loopHistory.push({ role: 'assistant', text: reply });
+            loopHistory.push({ role: 'user', text: results.join('\n\n') });
+            if (step === 7) break;
+            reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another MCP or service call, emit one tool block; otherwise give your final reply with no tool block.');
+          }
+          finalReply = stripToolBlocks(reply);
+          if (!finalReply) finalReply = actionsTaken.length ? `Done. Used: ${actionsTaken.join('; ')}.` : 'Done.';
+        } else {
+          finalReply = reply;
+        }
+        // Bot browser commands in the final reply drive the panel. Tap/type
         // actions stop at the panel's approval card; they never run
         // without the user approving that exact action.
-        for (const action of parseBrowserCommands(reply)) browserRef.current?.requestAction(action);
-        finalReply = reply;
+        for (const action of parseBrowserCommands(finalReply)) browserRef.current?.requestAction(action);
       }
       // A reply is delivered content, not a draft: no approval gate.
       // (Earlier builds saved every reply as approvalState 'draft' and
