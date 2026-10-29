@@ -12,12 +12,6 @@ import { deleteModelSetup, listModelSetups, saveModelSetup, ModelSetup } from '.
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
 import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../src/lib/tokens';
 
-const PRIVACY = `BotSquad Privacy — GitHub v1 (to be reviewed before any store release):
-• Chats, bots, skills, routines, and memory notes stay on your device in local storage.
-• Your API keys are stored only in the device secure store (Android Keystore). They are sent only to the provider you chose, in a direct call from your device. They are never sent to BotSquad or to any other server.
-• This GitHub version has NO ads, NO payments, and NO login. The only third parties are the model provider you chose, and any GitHub repo or MCP server you add yourself. No analytics or tracking is shipped.
-• This app is not affiliated with, endorsed by, or connected to any other AI product, and it makes no claim to be an official product of any other company.`;
-
 // Settings is the hub, laid out as clean grouped rows (icon, title,
 // short subtitle). Group 1 is the person + device: Profile, Color mode,
 // Font style, Permissions. Group 2 is the tool pages — Connections,
@@ -35,6 +29,7 @@ const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof F
   { label: 'MCP servers', detail: 'HTTP/SSE tool servers', icon: 'server', route: '/mcp' },
   { label: 'GitHub install', detail: 'Install skills, plugins, MCP servers', icon: 'github', route: '/github-install' },
   { label: 'Routines', detail: 'Scheduled skills and routines', icon: 'clock', route: '/routines' },
+  { label: 'Legal', detail: 'Privacy, terms, ads, refunds & feedback', icon: 'shield', route: '/legal' },
 ];
 
 type Provider = UniversalConfig['provider'];
@@ -349,14 +344,6 @@ export default function SettingsScreen() {
               </View>
             );
           })}
-        </Card>
-        <Card>
-          <Text style={styles.bold}>Ads & payments</Text>
-          <Text style={styles.sub}>No ads in this version.</Text>
-        </Card>
-        <Card>
-          <Text style={styles.bold}>Privacy Policy</Text>
-          <Text style={styles.bodyText}>{PRIVACY}</Text>
         </Card>
       </ScrollView>
       <OptionSheet
