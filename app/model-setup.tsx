@@ -6,7 +6,8 @@ import { Button, Card, Field } from '../src/components/ui';
 import { getApiKey, setApiKey } from '../src/lib/keys';
 import { getUniversal, parseContextWindow, setUniversal, UniversalConfig } from '../src/lib/universal';
 import { deleteModelSetup, listModelSetups, saveModelSetup, ModelSetup } from '../src/lib/modelSetups';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Model setup (user order 2026-10-29): this used to sit open on the
 // Settings page, making it long. Now it is its own section inside
@@ -23,6 +24,7 @@ const PROVIDER_LABELS: { id: Provider; label: string }[] = [
 
 export default function ModelSetupScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [provider, setProvider] = useState<Provider>('openai-compatible');
@@ -62,17 +64,17 @@ export default function ModelSetupScreen() {
 
   async function save() {
     const trimmedModel = model.trim();
-    if (!trimmedModel) { setMsg('Enter a model name.'); return; }
+    if (!trimmedModel) { setMsg(t(language, 'enterModel')); return; }
     // A model ID never contains a space: a display name typed here (for
     // example "Inkling Small (free)") is sent verbatim to the provider
     // and rejected there, surfacing only as a bare error number in chat.
     // Reject it at save time with a usable hint instead.
-    if (/\s/.test(trimmedModel)) { setMsg('Enter the exact API model ID, with no spaces (for example thinkingmachines/inkling:free), not the display name.'); return; }
+    if (/\s/.test(trimmedModel)) { setMsg(t(language, 'noSpaces')); return; }
     const parsedWindow = parseContextWindow(contextWindow);
-    if (parsedWindow === null) { setMsg('Context window must be a number, or shorthand like 256k, 546k, or 1M.'); return; }
+    if (parsedWindow === null) { setMsg(t(language, 'contextInvalid')); return; }
     const trimmedEndpoint = endpoint.trim();
     if (provider === 'openai-compatible' && trimmedEndpoint && !/^https:\/\/[^/?#\s]+(\/[^?#\s]*)?$/.test(trimmedEndpoint)) {
-      setMsg('Endpoint must be an https:// URL with no query string, or blank for OpenAI.'); return;
+      setMsg(t(language, 'endpointInvalid')); return;
     }
     await setApiKey(provider, apiKey);
     // The endpoint is only ever used for openai-compatible (see providers.ts),
@@ -108,10 +110,10 @@ export default function ModelSetupScreen() {
   }
 
   function deleteSetup(s: ModelSetup) {
-    Alert.alert('Delete saved model?', `${s.model} will be removed from the list below.`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t(language, 'deleteSavedTitle'), `${s.model} ${t(language, 'willBeRemovedList')}`, [
+      { text: t(language, 'cancel'), style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive',
+        text: t(language, 'delete'), style: 'destructive',
         onPress: async () => {
           // The active chat config is left untouched: deleting a row only
           // removes it from the list, it does not switch the active model.
@@ -127,15 +129,15 @@ export default function ModelSetupScreen() {
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Settings</Text>
+          <Text style={styles.backText}>{t(language, 'settings')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Model setup</Text>
+        <Text style={styles.headerTitle}>{t(language, 'modelSetup')}</Text>
         <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
-        <Text style={styles.sub}>Save as many models as you like. The active one is used in every chat. Keys stay in secure storage only.</Text>
+        <Text style={styles.sub}>{t(language, 'modelIntro')}</Text>
         <Card>
-          <Text style={styles.bold}>Provider</Text>
+          <Text style={styles.bold}>{t(language, 'providerLabel')}</Text>
           <View style={styles.chipRow}>
             {PROVIDER_LABELS.map((p) => (
               <Pressable key={p.id} onPress={() => changeProvider(p.id)} style={[styles.chip, provider === p.id && styles.chipActive]}>
@@ -143,43 +145,43 @@ export default function ModelSetupScreen() {
               </Pressable>
             ))}
           </View>
-          <Field label="API key" secure onChangeText={setApiKeyState} value={apiKey} />
+          <Field label={t(language, 'apiKeyLabel')} secure onChangeText={setApiKeyState} value={apiKey} />
           {provider === 'openai-compatible' && (
-            <Field label="API endpoint (blank = OpenAI)" onChangeText={setEndpoint} placeholder="https://api.openai.com/v1/chat/completions" value={endpoint} />
+            <Field label={t(language, 'apiEndpointLabel')} onChangeText={setEndpoint} placeholder="https://api.openai.com/v1/chat/completions" value={endpoint} />
           )}
           <View style={styles.modelRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.bold}>Model</Text>
+              <Text style={styles.bold}>{t(language, 'modelLabel')}</Text>
               <TextInput
                 accessibilityLabel="Model name"
                 onChangeText={setModel}
-                placeholder="Model ID from your provider"
+                placeholder={t(language, 'modelIdPlaceholder')}
                 placeholderTextColor={tokens.textMuted}
                 style={styles.input}
                 value={model}
               />
             </View>
             <View>
-              <Text style={styles.bold}>Context</Text>
+              <Text style={styles.bold}>{t(language, 'contextLabel')}</Text>
               <TextInput
                 accessibilityLabel="Context window"
                 autoCapitalize="none"
                 autoCorrect={false}
                 onChangeText={setContextWindow}
-                placeholder="e.g. 256k, 1M"
+                placeholder={t(language, 'contextPlaceholder')}
                 placeholderTextColor={tokens.textMuted}
                 style={[styles.input, styles.contextInput]}
                 value={contextWindow}
               />
             </View>
           </View>
-          <Button title="Save" onPress={save} />
+          <Button title={t(language, 'saveBtn')} onPress={save} />
         </Card>
         {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
-        <Text style={styles.sectionTitle}>Saved models</Text>
+        <Text style={styles.sectionTitle}>{t(language, 'savedModels')}</Text>
         <Card>
           {savedSetups.length === 0 ? (
-            <Text style={styles.sub}>No saved models yet. Save one above and it will appear here.</Text>
+            <Text style={styles.sub}>{t(language, 'noSavedModels')}</Text>
           ) : savedSetups.map((s, i) => {
             const isActive = active !== null && active.provider === s.provider && active.model === s.model && active.endpoint === s.endpoint;
             const providerLabel = PROVIDER_LABELS.find((p) => p.id === s.provider)?.label ?? s.provider;
@@ -188,16 +190,16 @@ export default function ModelSetupScreen() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.savedHead}>
                     <Text style={styles.menuLabel}>{s.model}</Text>
-                    {isActive ? <Text style={styles.activeBadge}>Active</Text> : null}
+                    {isActive ? <Text style={styles.activeBadge}>{t(language, 'activeBadge')}</Text> : null}
                   </View>
-                  <Text style={styles.menuDetail}>{providerLabel}{s.endpoint ? ` · ${s.endpoint}` : ' · Default endpoint'} · Context {s.contextWindow}</Text>
-                  <Text style={styles.menuDetail}>Key: stored in secure storage, never shown here.</Text>
+                  <Text style={styles.menuDetail}>{providerLabel}{s.endpoint ? ` · ${s.endpoint}` : ` · ${t(language, 'defaultEndpoint')}`} · {t(language, 'contextWord')} {s.contextWindow}</Text>
+                  <Text style={styles.menuDetail}>{t(language, 'keyStored')}</Text>
                 </View>
                 <Pressable onPress={() => useSetup(s)} style={styles.smallButton}>
-                  <Text style={styles.smallButtonText}>Use</Text>
+                  <Text style={styles.smallButtonText}>{t(language, 'useBtn')}</Text>
                 </Pressable>
                 <Pressable onPress={() => deleteSetup(s)} style={styles.smallButton}>
-                  <Text style={styles.smallButtonText}>Delete</Text>
+                  <Text style={styles.smallButtonText}>{t(language, 'delete')}</Text>
                 </Pressable>
               </View>
             );

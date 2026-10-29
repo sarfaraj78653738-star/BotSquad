@@ -5,7 +5,8 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { getUniversal, setUniversal, UniversalConfig } from '../lib/universal';
 import { listModelSetups, saveModelSetup, ModelSetup } from '../lib/modelSetups';
-import { useTokens } from '../lib/tokens';
+import { useLanguage, useTokens } from '../lib/tokens';
+import { t } from '../lib/i18n';
 
 // Model pill for the composer bar. Tapping it opens a bottom sheet
 // titled "Select model". The sheet lists ONLY the user's own models:
@@ -18,6 +19,7 @@ import { useTokens } from '../lib/tokens';
 // lose a model.
 export function ModelPicker() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const styles = getStyles(tokens);
@@ -49,13 +51,13 @@ export function ModelPicker() {
     key: `${s.provider}|${s.model}|${s.endpoint}`,
     id: s.model,
     provider: s.provider,
-    description: s.provider === 'openai-compatible' ? 'Saved model.' : `Saved model (${s.provider}).`,
+    description: s.provider === 'openai-compatible' ? t(language, 'savedModel') : `${t(language, 'savedModel')} (${s.provider}).`,
     apply: () => setUniversal({ provider: s.provider, model: s.model, endpoint: s.endpoint, contextWindow: s.contextWindow }),
   }));
   const models = [
     // No current row while no model is set: the sheet then lists
     // only saved models, never an empty or factory row.
-    ...(model ? [{ key: `current|${model}`, id: model, provider, description: 'Current model.', apply: () => setUniversal({ model }) }] : []),
+    ...(model ? [{ key: `current|${model}`, id: model, provider, description: t(language, 'currentModel'), apply: () => setUniversal({ model }) }] : []),
     ...savedEntries,
   ].filter((m, i, arr) => arr.findIndex((x) => x.key === m.key) === i);
 
@@ -67,14 +69,14 @@ export function ModelPicker() {
         onPress={async () => { if (!open) await refresh(); setOpen(true); }}
         style={styles.button}
       >
-        <Text style={styles.buttonText} numberOfLines={1}>{model || 'Select model'}</Text>
+        <Text style={styles.buttonText} numberOfLines={1}>{model || t(language, 'selectModel')}</Text>
         <Feather name="chevron-down" size={16} color={tokens.text} />
       </Pressable>
       <Modal animationType="slide" onRequestClose={() => setOpen(false)} transparent visible={open}>
         <Pressable accessibilityLabel="Close model picker" onPress={() => setOpen(false)} style={styles.backdrop} />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 28 }]}>
           <View style={styles.sheetHead}>
-            <Text style={styles.sheetTitle}>Select model</Text>
+            <Text style={styles.sheetTitle}>{t(language, 'selectModel')}</Text>
             <Pressable accessibilityLabel="Close model picker" onPress={() => setOpen(false)} style={styles.closeButton}>
               <Feather name="x" size={20} color={tokens.text} />
             </Pressable>
@@ -116,8 +118,8 @@ export function ModelPicker() {
           >
             <Feather name="cpu" size={18} color={tokens.text} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowText}>Model setup</Text>
-              <Text style={styles.rowDesc} numberOfLines={1}>Add or edit models, keys, and endpoints.</Text>
+              <Text style={styles.rowText}>{t(language, 'modelSetup')}</Text>
+              <Text style={styles.rowDesc} numberOfLines={1}>{t(language, 'modelSetupDesc')}</Text>
             </View>
             <Feather name="chevron-right" size={18} color={tokens.text} />
           </Pressable>

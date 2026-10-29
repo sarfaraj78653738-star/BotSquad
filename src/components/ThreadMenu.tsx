@@ -3,7 +3,8 @@ import { Alert, Modal, Pressable, Share, StyleSheet, Text, TextInput, View } fro
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { listProjects, Project } from '../lib/projects';
-import { useTokens } from '../lib/tokens';
+import { useLanguage, useTokens } from '../lib/tokens';
+import { t } from '../lib/i18n';
 
 // Chat thread menu, opened from the header three-dot button — the
 // same set the user pointed at: Share, Rename, Pin/Unpin, Add to
@@ -28,6 +29,7 @@ export function ThreadMenu({ visible, onClose, target, pinned, onRename, onToggl
   onDelete: () => Promise<void>;
 }) {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const insets = useSafeAreaInsets();
   const styles = getStyles(tokens);
   const [view, setView] = useState<'menu' | 'rename' | 'projects'>('menu');
@@ -64,50 +66,50 @@ export function ThreadMenu({ visible, onClose, target, pinned, onRename, onToggl
           </Pressable>
         </View>
         {view === 'menu' && (<>
-          {row('share-2', 'Share', share)}
-          {row('edit-3', 'Rename', () => { setName(target.title); setView('rename'); })}
-          {row(pinned ? 'x-circle' : 'bookmark', pinned ? 'Unpin' : 'Pin', async () => { await onTogglePin(); close(); })}
-          {row('folder-plus', 'Add to project', async () => { setProjects(await listProjects().catch(() => [])); setView('projects'); })}
-          {row('home', 'Add to home', async () => {
+          {row('share-2', t(language, 'share'), share)}
+          {row('edit-3', t(language, 'rename'), () => { setName(target.title); setView('rename'); })}
+          {row(pinned ? 'x-circle' : 'bookmark', pinned ? t(language, 'unpin') : t(language, 'pin'), async () => { await onTogglePin(); close(); })}
+          {row('folder-plus', t(language, 'addToProject'), async () => { setProjects(await listProjects().catch(() => [])); setView('projects'); })}
+          {row('home', t(language, 'addToHome'), async () => {
             setBusy('home');
             const result = await onAddToHome();
             setBusy('');
             close();
-            if (result === 'added') Alert.alert('Shortcut requested', 'Android will ask you to confirm adding this chat to your home screen.');
-            else if (result === 'unavailable') Alert.alert('Not available', 'Home-screen shortcuts are not available in this build.');
-            else Alert.alert('Could not add', 'The shortcut could not be created. Try again.');
+            if (result === 'added') Alert.alert(t(language, 'shortcutRequested'), t(language, 'shortcutConfirm'));
+            else if (result === 'unavailable') Alert.alert(t(language, 'notAvailable'), t(language, 'shortcutsUnavailable'));
+            else Alert.alert(t(language, 'couldNotAdd'), t(language, 'shortcutFailed'));
           })}
-          {row('download', 'Export ZIP', async () => { close(); await onExportZip(); })}
-          {row('trash-2', 'Delete', () => {
-            Alert.alert('Delete this chat?', 'This cannot be undone. Only this chat is deleted.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: async () => { await onDelete(); close(); } },
+          {row('download', t(language, 'exportZip'), async () => { close(); await onExportZip(); })}
+          {row('trash-2', t(language, 'delete'), () => {
+            Alert.alert(t(language, 'deleteChatTitle'), t(language, 'deleteChatBody'), [
+              { text: t(language, 'cancel'), style: 'cancel' },
+              { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await onDelete(); close(); } },
             ]);
           }, true)}
-          {busy ? <Text style={styles.sub}>Working…</Text> : null}
+          {busy ? <Text style={styles.sub}>{t(language, 'working')}</Text> : null}
         </>)}
         {view === 'rename' && (
           <View>
-            <TextInput accessibilityLabel="Chat name" value={name} onChangeText={setName} placeholder="Chat name" placeholderTextColor={tokens.textMuted} style={styles.input} />
+            <TextInput accessibilityLabel="Chat name" value={name} onChangeText={setName} placeholder={t(language, 'chatName')} placeholderTextColor={tokens.textMuted} style={styles.input} />
             <Pressable onPress={async () => { const t = name.trim(); if (t) await onRename(t); close(); }} style={styles.saveButton}>
-              <Text style={styles.saveText}>Save name</Text>
+              <Text style={styles.saveText}>{t(language, 'saveName')}</Text>
             </Pressable>
             <Pressable onPress={() => setView('menu')} style={styles.backButton}>
-              <Text style={styles.backText}>Back</Text>
+              <Text style={styles.backText}>{t(language, 'back')}</Text>
             </Pressable>
           </View>
         )}
         {view === 'projects' && (
           <View>
-            {projects.length === 0 && <Text style={styles.sub}>No projects yet. Create one in Projects first.</Text>}
+            {projects.length === 0 && <Text style={styles.sub}>{t(language, 'noProjectsFirst')}</Text>}
             {projects.map((p) => (
-              <Pressable key={p.id} onPress={async () => { await onAddToProject(p.id); close(); Alert.alert('Added to project', `"${target.title}" is now linked to ${p.name}.`); }} style={styles.row}>
+              <Pressable key={p.id} onPress={async () => { await onAddToProject(p.id); close(); Alert.alert(t(language, 'addedToProject'), `"${target.title}" ${t(language, 'isNowLinkedTo')} ${p.name}.`); }} style={styles.row}>
                 <Feather name="folder" size={20} color={tokens.text} />
                 <Text style={styles.rowText}>{p.name}</Text>
               </Pressable>
             ))}
             <Pressable onPress={() => setView('menu')} style={styles.backButton}>
-              <Text style={styles.backText}>Back</Text>
+              <Text style={styles.backText}>{t(language, 'back')}</Text>
             </Pressable>
           </View>
         )}

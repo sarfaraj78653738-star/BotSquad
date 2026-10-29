@@ -8,10 +8,12 @@ import { AVATAR_VARIANTS } from '../../src/lib/avatars';
 import { deleteMemory, getBot, listMemory, saveBot } from '../../src/lib/db';
 import { AVATAR_COLORS, AVATAR_ICONS } from '../../src/lib/tokens';
 import { Bot, MemoryNote, newId, nowIso } from '../../src/lib/types';
-import { useTokens } from '../../src/lib/tokens';
+import { useLanguage, useTokens } from '../../src/lib/tokens';
+import { t } from '../../src/lib/i18n';
 
 export default function BotEditScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -34,7 +36,7 @@ export default function BotEditScreen() {
   }, [id, isNew]);
 
   async function save() {
-    if (!bot.name.trim() || !bot.task.trim()) { Alert.alert('Missing fields', 'A bot needs at least a name and a task.'); return; }
+    if (!bot.name.trim() || !bot.task.trim()) { Alert.alert(t(language, 'missingFields'), t(language, 'missingBotFields')); return; }
     await saveBot({ ...bot, updatedAt: nowIso() });
     router.back();
   }
@@ -44,32 +46,32 @@ export default function BotEditScreen() {
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/bots'); }} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Back</Text>
+          <Text style={styles.backText}>{t(language, 'back')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>{isNew ? 'Create a bot' : `Edit ${bot.name}`}</Text>
+        <Text style={styles.headerTitle}>{isNew ? t(language, 'createBotTitle') : `${t(language, 'editWord')} ${bot.name}`}</Text>
         <View style={{ width: 68 }} />
       </View>
     <ScrollView style={styles.body}>
-      <Text style={styles.sub}>One task = its personality.</Text>
-      <Text style={styles.title}>Avatar — pick one for this bot</Text>
+      <Text style={styles.sub}>{t(language, 'oneTask')}</Text>
+      <Text style={styles.title}>{t(language, 'avatarTitle')}</Text>
       <AvatarPicker value={bot.avatar} onChange={(id) => setBot({ ...bot, avatar: id })} />
-      <Field label="Name" onChangeText={(v) => setBot({ ...bot, name: v })} value={bot.name} />
-      <Field label="Role" onChangeText={(v) => setBot({ ...bot, role: v })} value={bot.role} />
-      <Field label="Task (what it owns)" multiline onChangeText={(v) => setBot({ ...bot, task: v })} value={bot.task} />
-      <Field label="Personality (how it talks and works)" multiline onChangeText={(v) => setBot({ ...bot, personality: v })} value={bot.personality} />
-      <Field label="Instructions" multiline onChangeText={(v) => setBot({ ...bot, instructions: v })} value={bot.instructions} />
-      <Field label="Boundaries (always win)" multiline onChangeText={(v) => setBot({ ...bot, boundaries: v })} value={bot.boundaries} />
-      <Button title="Save bot" onPress={save} />
+      <Field label={t(language, 'nameLabel')} onChangeText={(v) => setBot({ ...bot, name: v })} value={bot.name} />
+      <Field label={t(language, 'roleLabel')} onChangeText={(v) => setBot({ ...bot, role: v })} value={bot.role} />
+      <Field label={t(language, 'taskLabel')} multiline onChangeText={(v) => setBot({ ...bot, task: v })} value={bot.task} />
+      <Field label={t(language, 'personalityLabel')} multiline onChangeText={(v) => setBot({ ...bot, personality: v })} value={bot.personality} />
+      <Field label={t(language, 'instructionsLabel')} multiline onChangeText={(v) => setBot({ ...bot, instructions: v })} value={bot.instructions} />
+      <Field label={t(language, 'boundariesLabel')} multiline onChangeText={(v) => setBot({ ...bot, boundaries: v })} value={bot.boundaries} />
+      <Button title={t(language, 'saveBotBtn')} onPress={save} />
       {!isNew && (
         <View style={{ marginTop: 24 }}>
-          <Text style={styles.title}>Memory notes (auto-learned)</Text>
-          <Text style={styles.sub}>Delete a note to remove it. Boundaries always win.</Text>
-          {memory.length === 0 && <Text style={styles.sub}>No memory notes yet.</Text>}
+          <Text style={styles.title}>{t(language, 'memoryTitle')}</Text>
+          <Text style={styles.sub}>{t(language, 'memorySub')}</Text>
+          {memory.length === 0 && <Text style={styles.sub}>{t(language, 'noMemory')}</Text>}
           {memory.map((m) => (
             <Card key={m.id}>
               <Text>{m.note}</Text>
               <Text style={styles.sub}>{m.source}, {m.createdAt}</Text>
-              <Button title="Delete note" variant="danger" onPress={async () => { await deleteMemory(m.id); setMemory(await listMemory(bot.id)); }} />
+              <Button title={t(language, 'deleteNote')} variant="danger" onPress={async () => { await deleteMemory(m.id); setMemory(await listMemory(bot.id)); }} />
             </Card>
           ))}
         </View>

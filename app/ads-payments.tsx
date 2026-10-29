@@ -2,7 +2,8 @@ import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Card } from '../src/components/ui';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Ads & payments section (user order 2026-10-29): a separate page
 // inside Settings where users will buy Premium to stop ads. The
@@ -15,6 +16,7 @@ import { useTokens } from '../src/lib/tokens';
 // Standing rule: premium removes ads ONLY. It never locks a feature.
 export default function AdsPaymentsScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
 
@@ -23,25 +25,25 @@ export default function AdsPaymentsScreen() {
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Settings</Text>
+          <Text style={styles.backText}>{t(language, 'settings')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Ads & payments</Text>
+        <Text style={styles.headerTitle}>{t(language, 'adsPayments')}</Text>
         <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
-        <Text style={styles.sectionTitle}>Current plan</Text>
+        <Text style={styles.sectionTitle}>{t(language, 'currentPlan')}</Text>
         <Card>
-          <Text style={styles.bold}>Free</Text>
-          <Text style={styles.sub}>This version shows no ads.</Text>
+          <Text style={styles.bold}>{t(language, 'freePlan')}</Text>
+          <Text style={styles.sub}>{t(language, 'noAdsNote')}</Text>
         </Card>
-        <Text style={styles.sectionTitle}>Premium</Text>
+        <Text style={styles.sectionTitle}>{t(language, 'premiumShort')}</Text>
         <Card>
-          <Text style={styles.bold}>Premium — no ads</Text>
-          <Text style={styles.sub}>• Removes ads during loading.</Text>
-          <Text style={styles.sub}>• Premium never locks a feature — everything in the app stays free.</Text>
-          <Text style={styles.sub}>• Purchase is not live yet: price and payment setup are pending.</Text>
+          <Text style={styles.bold}>{t(language, 'premiumTitle')}</Text>
+          <Text style={styles.sub}>• {t(language, 'premiumA')}</Text>
+          <Text style={styles.sub}>• {t(language, 'premiumB')}</Text>
+          <Text style={styles.sub}>• {t(language, 'premiumC')}</Text>
         </Card>
-        <Text style={styles.note}>Buying opens once price and a verified payment route are set up. No payment is taken from this page today.</Text>
+        <Text style={styles.note}>{t(language, 'buyingNote')}</Text>
       </ScrollView>
     </View>
   );

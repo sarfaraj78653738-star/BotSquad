@@ -5,7 +5,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { Button, Card, Field } from '../src/components/ui';
 import { getSetting, setSetting } from '../src/lib/db';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Profile — local only. There is no login and no account in Phase 1, so
 // there is deliberately no Delete Account button, no billing row, and no
@@ -17,6 +18,7 @@ import { useTokens } from '../src/lib/tokens';
 // already sends to their own chosen provider (see prompt.ts).
 export default function ProfileScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [fullName, setFullName] = useState('');
@@ -42,18 +44,18 @@ export default function ProfileScreen() {
     const uri = result.assets[0].uri;
     setPhotoUri(uri);
     await setSetting('profile_photo_uri', uri);
-    setMsg('Photo saved on this device only.');
+    setMsg(t(language, 'photoSaved'));
   }
 
   async function saveProfile() {
     await setSetting('profile_full_name', fullName.trim());
     await setSetting('profile_call_name', callName.trim());
-    setMsg('Profile saved.');
+    setMsg(t(language, 'profileSaved'));
   }
 
   async function savePreferences() {
     await setSetting('profile_preferences', preferences.trim());
-    setMsg('Preferences saved. They will be considered in every chat.');
+    setMsg(t(language, 'prefsSaved'));
   }
 
   return (
@@ -61,9 +63,9 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Settings</Text>
+          <Text style={styles.backText}>{t(language, 'settings')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Profile</Text>
+        <Text style={styles.headerTitle}>{t(language, 'profile')}</Text>
         <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
@@ -78,19 +80,19 @@ export default function ProfileScreen() {
             )}
           </View>
           <Pressable accessibilityLabel="Edit photo" onPress={editPhoto}>
-            <Text style={styles.editPhoto}>Edit Photo</Text>
+            <Text style={styles.editPhoto}>{t(language, 'editPhoto')}</Text>
           </Pressable>
         </View>
         <Card>
-          <Field label="Full name" onChangeText={setFullName} value={fullName} />
-          <Field label="What should we call you?" onChangeText={setCallName} value={callName} />
-          <Button title="Update Profile" onPress={saveProfile} />
+          <Field label={t(language, 'fullName')} onChangeText={setFullName} value={fullName} />
+          <Field label={t(language, 'callName')} onChangeText={setCallName} value={callName} />
+          <Button title={t(language, 'updateProfile')} onPress={saveProfile} />
         </Card>
-        <Text style={styles.sectionTitle}>What personal preferences should the bots consider in responses?</Text>
-        <Text style={styles.sub}>These preferences apply to all conversations.</Text>
+        <Text style={styles.sectionTitle}>{t(language, 'prefsTitle')}</Text>
+        <Text style={styles.sub}>{t(language, 'prefsSub')}</Text>
         <Card>
-          <Field label="Personal preferences" multiline onChangeText={setPreferences} value={preferences} />
-          <Button title="Save Preferences" onPress={savePreferences} />
+          <Field label={t(language, 'prefsLabel')} multiline onChangeText={setPreferences} value={preferences} />
+          <Button title={t(language, 'savePrefs')} onPress={savePreferences} />
         </Card>
         {msg ? <Card><Text style={styles.sub}>{msg}</Text></Card> : null}
       </ScrollView>

@@ -8,7 +8,8 @@ import { deleteConnectionToken, getConnectionToken, setConnectionToken } from '.
 import { CONNECTION_CATALOG, CONNECTION_CATEGORIES, COMING_SOON_SERVICES, catalogFor, CatalogService } from '../src/lib/connectionCatalog';
 import { verifyConnection } from '../src/lib/connectionVerify';
 import { Bot, Connection, newId, nowIso } from '../src/lib/types';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Connections, rebuilt (user order 2026-10-29): the old screen was a
 // blank name/service/key form with a "selected bot" picker on top —
@@ -29,6 +30,7 @@ type ConnectView =
 
 export default function ConnectScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [bots, setBots] = useState<Bot[]>([]);
@@ -79,10 +81,10 @@ export default function ConnectScreen() {
   async function doConnect() {
     const name = addName.trim() || (view.kind === 'add' && view.service ? view.service.service : '');
     const service = view.kind === 'add' && view.service ? view.service.service : addService.trim();
-    if (!name || !service) { Alert.alert('Missing fields', 'A connection needs a name and a service.'); return; }
-    const fields = view.kind === 'add' && view.service ? view.service.fields : [{ key: 'token', label: 'API key / token', secure: true }];
+    if (!name || !service) { Alert.alert(t(language, 'missingFields'), t(language, 'needNameService')); return; }
+    const fields = view.kind === 'add' && view.service ? view.service.fields : [{ key: 'token', label: t(language, 'apiKeyTokenShort'), secure: true }];
     for (const f of fields) {
-      if (!(fieldValues[f.key] ?? '').trim()) { setAddError(`Fill in: ${f.label}.`); return; }
+      if (!(fieldValues[f.key] ?? '').trim()) { setAddError(`${t(language, 'fillInLabel')} ${f.label}.`); return; }
     }
     // Catalog services are VERIFIED live before anything is saved: the
     // app calls the service's own API with these details, and only a
@@ -91,14 +93,14 @@ export default function ConnectScreen() {
     if (view.kind === 'add' && view.service) {
       setConnecting(true);
       setAddError('');
-      const result = await verifyConnection(view.service, fieldValues);
+      const result = await verifyConnection(view.service, fieldValues, language);
       setConnecting(false);
-      if (!result.ok) { setAddError(result.error ?? 'Could not verify.'); return; }
+      if (!result.ok) { setAddError(result.error ?? t(language, 'couldNotVerify')); return; }
       const id = newId();
       await saveConnection({ id, name, service, scope: 'global', permissions: '', createdAt: nowIso() });
       const toStore = fields.length === 1 ? fieldValues[fields[0].key].trim() : JSON.stringify(fieldValues);
       await setConnectionToken(id, toStore);
-      setMsg(result.account ? `${name} connected as ${result.account}.` : `${name} connected. Verified with ${service}.`);
+      setMsg(result.account ? `${name} ${t(language, 'connectedAs')} ${result.account}.` : `${name} ${t(language, 'connectedPlain')} ${t(language, 'verifiedWith')} ${service}.`);
       setView({ kind: 'list' });
       refresh();
       return;
@@ -106,7 +108,7 @@ export default function ConnectScreen() {
     const id = newId();
     await saveConnection({ id, name, service, scope: 'global', permissions: '', createdAt: nowIso() });
     if ((fieldValues.token ?? '').trim()) await setConnectionToken(id, fieldValues.token);
-    setMsg(`${name} connected. Its details stay in this phone's secure storage only.`);
+    setMsg(`${name} ${t(language, 'connectedSecure')}`);
     setView({ kind: 'list' });
     refresh();
   }
@@ -126,31 +128,31 @@ export default function ConnectScreen() {
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Settings</Text>
+          <Text style={styles.backText}>{t(language, 'settings')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Connections</Text>
+        <Text style={styles.headerTitle}>{t(language, 'connections')}</Text>
         <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
         {view.kind === 'list' && (
           <>
-            <Text style={styles.sub}>A connection lets a bot use a service. The key is stored only on this phone, never sent anywhere except to that service when the bot uses it.</Text>
+            <Text style={styles.sub}>{t(language, 'connectIntro')}</Text>
             <TextInput
               accessibilityLabel="Search connectors"
               onChangeText={setQuery}
-              placeholder="Search connectors"
+              placeholder={t(language, 'searchConnectors')}
               placeholderTextColor={tokens.textMuted}
               style={styles.search}
               value={query}
             />
             {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
-            <Text style={styles.sectionTitle}>Connected</Text>
+            <Text style={styles.sectionTitle}>{t(language, 'connectedSection')}</Text>
             <Card>
-              <Pressable onPress={() => Alert.alert('Browser', 'The in-chat browser is built into the app — no setup needed. Ask any chat to open a site. If a site needs login, you sign in yourself in the panel; the bot never types passwords.')} style={styles.row}>
+              <Pressable onPress={() => Alert.alert(t(language, 'browserWord'), t(language, 'browserAlertBody'))} style={styles.row}>
                 <Feather name="globe" size={22} color={tokens.text} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle}>Browser</Text>
-                  <Text style={styles.rowSub}>Built into the app — no setup needed</Text>
+                  <Text style={styles.rowTitle}>{t(language, 'browserWord')}</Text>
+                  <Text style={styles.rowSub}>{t(language, 'browserRowSub')}</Text>
                 </View>
                 <Feather name="chevron-right" size={20} color={tokens.textMuted} />
               </Pressable>
@@ -165,7 +167,7 @@ export default function ConnectScreen() {
                 </Pressable>
               ))}
             </Card>
-            <Text style={styles.sectionTitle}>Available</Text>
+            <Text style={styles.sectionTitle}>{t(language, 'availableSection')}</Text>
             {CONNECTION_CATEGORIES.map((cat) => {
               const items = available.filter((c) => c.category === cat);
               if (items.length === 0) return null;
@@ -180,8 +182,8 @@ export default function ConnectScreen() {
                           <Text style={styles.rowTitle}>{c.service}</Text>
                           <Text style={styles.rowSub} numberOfLines={2}>{c.blurb}</Text>
                         </View>
-                        {connectedServices.has(c.service.toLowerCase()) && <Text style={styles.connectedTag}>Connected</Text>}
-                        <Text style={styles.connectText}>Connect</Text>
+                        {connectedServices.has(c.service.toLowerCase()) && <Text style={styles.connectedTag}>{t(language, 'connectedTag')}</Text>}
+                        <Text style={styles.connectText}>{t(language, 'connectBtn')}</Text>
                       </Pressable>
                     ))}
                   </Card>
@@ -193,25 +195,25 @@ export default function ConnectScreen() {
                 <Pressable onPress={() => openAdd(null)} style={styles.row}>
                   <Feather name="plus" size={22} color={tokens.text} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle}>Custom service</Text>
-                    <Text style={styles.rowSub} numberOfLines={2}>Any other service that works with an API key.</Text>
+                    <Text style={styles.rowTitle}>{t(language, 'customService')}</Text>
+                    <Text style={styles.rowSub} numberOfLines={2}>{t(language, 'customServiceSub')}</Text>
                   </View>
-                  <Text style={styles.connectText}>Connect</Text>
+                  <Text style={styles.connectText}>{t(language, 'connectBtn')}</Text>
                 </Pressable>
               </Card>
             )}
             {COMING_SOON_SERVICES.filter((c) => matches(c.service) || matches(c.blurb)).length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>Coming soon</Text>
+                <Text style={styles.sectionTitle}>{t(language, 'comingSoonSection')}</Text>
                 <Card>
                   {COMING_SOON_SERVICES.filter((c) => matches(c.service) || matches(c.blurb)).map((c, i) => (
-                    <Pressable key={c.service} onPress={() => Alert.alert(`${c.service} — coming soon`, `${c.service} needs a login (OAuth), which needs the server phase. It arrives when payment starts; until then it cannot be connected from this phone. `)} style={[styles.row, i > 0 && styles.rowDivider]}>
+                    <Pressable key={c.service} onPress={() => Alert.alert(`${c.service} ${t(language, 'comingSoonSuffix')}`, `${c.service} ${t(language, 'comingSoonBody')}`)} style={[styles.row, i > 0 && styles.rowDivider]}>
                       <Feather name={c.icon} size={22} color={tokens.text} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowTitle}>{c.service}</Text>
                         <Text style={styles.rowSub} numberOfLines={2}>{c.blurb}</Text>
                       </View>
-                      <Text style={styles.connectedTag}>Soon</Text>
+                      <Text style={styles.connectedTag}>{t(language, 'soonTag')}</Text>
                     </Pressable>
                   ))}
                 </Card>
@@ -224,22 +226,22 @@ export default function ConnectScreen() {
           <>
             <Pressable onPress={() => setView({ kind: 'list' })} style={styles.backRow}>
               <Feather name="chevron-left" size={22} color={tokens.text} />
-              <Text style={styles.backText}>Connections</Text>
+              <Text style={styles.backText}>{t(language, 'connections')}</Text>
             </Pressable>
-            <Text style={styles.title}>{view.service ? `Connect ${view.service.service}` : 'Custom service'}</Text>
+            <Text style={styles.title}>{view.service ? `${t(language, 'connectVerb')} ${view.service.service}` : t(language, 'customService')}</Text>
             {view.service && <Text style={styles.sub}>{view.service.blurb}</Text>}
-            {view.service && <Text style={styles.sub}>Needed: {view.service.keyHint}</Text>}
-            <Field label="Connection name" onChangeText={setAddName} value={addName} />
-            {view.service === null && <Field label="Service" onChangeText={setAddService} value={addService} />}
+            {view.service && <Text style={styles.sub}>{t(language, 'neededLabel')} {view.service.keyHint}</Text>}
+            <Field label={t(language, 'connectionName')} onChangeText={setAddName} value={addName} />
+            {view.service === null && <Field label={t(language, 'serviceLabel')} onChangeText={setAddService} value={addService} />}
             {view.service
               ? view.service.fields.map((f) => (
                   <Field key={f.key} label={f.label} secure={f.secure} placeholder={f.placeholder} onChangeText={(t) => setFieldValues((v) => ({ ...v, [f.key]: t }))} value={fieldValues[f.key] ?? ''} />
                 ))
-              : <Field label="API key / token (secure storage only)" secure onChangeText={(t) => setFieldValues((v) => ({ ...v, token: t }))} value={fieldValues.token ?? ''} />}
+              : <Field label={t(language, 'apiKeyToken')} secure onChangeText={(t) => setFieldValues((v) => ({ ...v, token: t }))} value={fieldValues.token ?? ''} />}
             {addError ? <Text style={styles.errorText}>{addError}</Text> : null}
-            <Button title={connecting ? 'Connecting…' : view.service ? 'Connect' : 'Save connection'} disabled={connecting} onPress={() => { void doConnect(); }} />
-            {view.service && <Text style={styles.note}>Connect checks these details with {view.service.service} right now. Only a verified connection is saved.</Text>}
-            <Text style={styles.note}>Details stay in this phone's secure storage. They are never shown again after saving.</Text>
+            <Button title={connecting ? t(language, 'connecting') : view.service ? t(language, 'connectBtn') : t(language, 'saveConnectionBtn')} disabled={connecting} onPress={() => { void doConnect(); }} />
+            {view.service && <Text style={styles.note}>{t(language, 'connectCheckA')} {view.service.service} {t(language, 'connectCheckB')}</Text>}
+            <Text style={styles.note}>{t(language, 'detailsNote')}</Text>
           </>
         )}
 
@@ -247,7 +249,7 @@ export default function ConnectScreen() {
           <>
             <Pressable onPress={() => setView({ kind: 'list' })} style={styles.backRow}>
               <Feather name="chevron-left" size={22} color={tokens.text} />
-              <Text style={styles.backText}>Connections</Text>
+              <Text style={styles.backText}>{t(language, 'connections')}</Text>
             </Pressable>
             <View style={styles.detailHead}>
               <Feather name={iconFor(view.conn.service)} size={28} color={tokens.text} />
@@ -257,29 +259,29 @@ export default function ConnectScreen() {
               </View>
             </View>
             {catalogFor(view.conn.service) && <Text style={styles.sub}>{catalogFor(view.conn.service)!.blurb}</Text>}
-            <Text style={styles.sub}>{detailHasKey ? 'Key saved in this phone\'s secure storage.' : 'No key saved for this connection yet.'}</Text>
+            <Text style={styles.sub}>{detailHasKey ? t(language, 'keySaved') : t(language, 'noKeySaved')}</Text>
             {!detailHasKey && (
               <>
-                <Field label="API key / token (secure storage only)" secure onChangeText={setDetailToken} value={detailToken} />
-                <Button title="Save key" onPress={async () => { if (!detailToken.trim()) return; await setConnectionToken(view.conn.id, detailToken); setDetailToken(''); setDetailHasKey(true); }} />
+                <Field label={t(language, 'apiKeyToken')} secure onChangeText={setDetailToken} value={detailToken} />
+                <Button title={t(language, 'saveKeyBtn')} onPress={async () => { if (!detailToken.trim()) return; await setConnectionToken(view.conn.id, detailToken); setDetailToken(''); setDetailHasKey(true); }} />
               </>
             )}
-            <Text style={styles.sectionTitle}>Enabled for</Text>
-            {bots.length === 0 && <Text style={styles.sub}>No bots yet. Create a bot first, then enable this connection for it here.</Text>}
+            <Text style={styles.sectionTitle}>{t(language, 'enabledFor')}</Text>
+            {bots.length === 0 && <Text style={styles.sub}>{t(language, 'noBotsFirst')}</Text>}
             {bots.map((b) => {
               const on = detailEnabledBots.includes(b.id);
               return (
                 <Card key={b.id}>
                   <Text style={styles.rowTitle}>{b.name}</Text>
                   <View style={{ height: 8 }} />
-                  <Button title={on ? 'Enabled' : 'Enable'} variant={on ? 'primary' : 'secondary'} onPress={async () => { await toggleBotConnection(b.id, view.conn.id, !on); setDetailEnabledBots(on ? detailEnabledBots.filter((x) => x !== b.id) : [...detailEnabledBots, b.id]); }} />
+                  <Button title={on ? t(language, 'enabledBtn') : t(language, 'enableBtn')} variant={on ? 'primary' : 'secondary'} onPress={async () => { await toggleBotConnection(b.id, view.conn.id, !on); setDetailEnabledBots(on ? detailEnabledBots.filter((x) => x !== b.id) : [...detailEnabledBots, b.id]); }} />
                 </Card>
               );
             })}
             <View style={{ height: 12 }} />
-            <Button title="Delete connection" variant="danger" onPress={() => Alert.alert('Delete this connection?', `${view.conn.name} will be removed, its key revoked, and it will be disabled for all bots.`, [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: async () => { await deleteConnectionToken(view.conn.id); await deleteConnection(view.conn.id); setView({ kind: 'list' }); refresh(); } },
+            <Button title={t(language, 'deleteConnectionBtn')} variant="danger" onPress={() => Alert.alert(t(language, 'deleteConnectionTitle'), `${view.conn.name} ${t(language, 'deleteConnectionBody')}`, [
+              { text: t(language, 'cancel'), style: 'cancel' },
+              { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteConnectionToken(view.conn.id); await deleteConnection(view.conn.id); setView({ kind: 'list' }); refresh(); } },
             ])} />
           </>
         )}

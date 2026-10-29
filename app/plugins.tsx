@@ -5,10 +5,12 @@ import { Feather } from '@expo/vector-icons';
 import { Card } from '../src/components/ui';
 import { listPlugins } from '../src/lib/db';
 import { Plugin } from '../src/lib/types';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 export default function PluginsScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
@@ -23,20 +25,20 @@ export default function PluginsScreen() {
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Settings</Text>
+          <Text style={styles.backText}>{t(language, 'settings')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Plugins</Text>
+        <Text style={styles.headerTitle}>{t(language, 'plugins')}</Text>
         <View style={{ width: 84 }} />
       </View>
     <ScrollView style={styles.body}>
-      <Text style={styles.sub}>Plugins are definitions only. No code is executed.</Text>
-      {plugins.length === 0 && <Text style={styles.sub}>No plugins installed yet. Install one from GitHub.</Text>}
+      <Text style={styles.sub}>{t(language, 'pluginsIntro')}</Text>
+      {plugins.length === 0 && <Text style={styles.sub}>{t(language, 'noPlugins')}</Text>}
       {plugins.map((p) => (
         <Card key={p.id}>
           <Text style={styles.bold}>{p.name}</Text>
           <Text style={styles.sub}>{p.description}</Text>
-          <Text style={styles.sub}>Author: {p.author}, Permissions: {p.permissions}</Text>
-          {p.hasExecutableCode ? <Text style={{ color: tokens.warning }}>Warning: this repo contains executable code. It was NOT executed — only its skill/instruction parts were installed.</Text> : null}
+          <Text style={styles.sub}>{t(language, 'authorLabel')} {p.author}, {t(language, 'permissionsLabel')} {p.permissions}</Text>
+          {p.hasExecutableCode ? <Text style={{ color: tokens.warning }}>{t(language, 'execWarning')}</Text> : null}
         </Card>
       ))}
     </ScrollView>

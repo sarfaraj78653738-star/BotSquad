@@ -5,7 +5,8 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
 import { deleteSkill, listSkills, saveSkill } from '../src/lib/db';
 import { Skill, newId, nowIso } from '../src/lib/types';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Skills (user order 2026-10-29): this screen is ONLY the library of
 // skills the user saved. No per-bot enabling, no "selected bot"
@@ -15,6 +16,7 @@ import { useTokens } from '../src/lib/tokens';
 // its detail: full instructions, Edit, Delete.
 export default function SkillsScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -31,15 +33,15 @@ export default function SkillsScreen() {
   useFocusEffect(refresh);
 
   async function addSkill() {
-    if (!skillName.trim() || !skillTemplate.trim()) { Alert.alert('Missing fields', 'A skill needs a name and instruction text.'); return; }
+    if (!skillName.trim() || !skillTemplate.trim()) { Alert.alert(t(language, 'missingFields'), t(language, 'skillNeeds')); return; }
     if (editingId) {
       const original = skills.find((s) => s.id === editingId);
       await saveSkill({ id: editingId, botId: original ? original.botId : null, name: skillName.trim(), template: skillTemplate, source: original ? original.source : 'local', repoUrl: original ? original.repoUrl : null, permissions: original ? original.permissions : '', createdAt: original ? original.createdAt : nowIso() });
       setEditingId(null);
-      setMsg('Skill updated.');
+      setMsg(t(language, 'skillUpdated'));
     } else {
       await saveSkill({ id: newId(), botId: null, name: skillName.trim(), template: skillTemplate, source: 'local', repoUrl: null, permissions: '', createdAt: nowIso() });
-      setMsg('Skill saved.');
+      setMsg(t(language, 'skillSaved'));
     }
     setSkillName(''); setSkillTemplate('');
     refresh();
@@ -50,9 +52,9 @@ export default function SkillsScreen() {
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Settings</Text>
+          <Text style={styles.backText}>{t(language, 'settings')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Skills</Text>
+        <Text style={styles.headerTitle}>{t(language, 'skills')}</Text>
         <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
@@ -60,28 +62,28 @@ export default function SkillsScreen() {
           <>
             <Pressable onPress={() => setDetail(null)} style={styles.backRow}>
               <Feather name="chevron-left" size={22} color={tokens.text} />
-              <Text style={styles.backText}>Skills</Text>
+              <Text style={styles.backText}>{t(language, 'skills')}</Text>
             </Pressable>
             <Text style={styles.title}>{detail.name}</Text>
-            <Text style={styles.sub}>Source: {detail.source}{detail.repoUrl ? ` — ${detail.repoUrl}` : ''}</Text>
+            <Text style={styles.sub}>{t(language, 'sourceLabel')} {detail.source}{detail.repoUrl ? ` — ${detail.repoUrl}` : ''}</Text>
             <Text style={styles.bodyText}>{detail.template}</Text>
-            <Button title="Edit skill" variant="secondary" onPress={() => { setEditingId(detail.id); setSkillName(detail.name); setSkillTemplate(detail.template); setDetail(null); }} />
+            <Button title={t(language, 'editSkillBtn')} variant="secondary" onPress={() => { setEditingId(detail.id); setSkillName(detail.name); setSkillTemplate(detail.template); setDetail(null); }} />
             <View style={{ height: 8 }} />
-            <Button title="Delete skill" variant="danger" onPress={() => Alert.alert('Delete this skill?', `${detail.name} will be removed.`, [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: async () => { await deleteSkill(detail.id); setDetail(null); refresh(); } },
+            <Button title={t(language, 'deleteSkillBtn')} variant="danger" onPress={() => Alert.alert(t(language, 'deleteSkillTitle'), `${detail.name} ${t(language, 'willBeRemovedGeneric')}`, [
+              { text: t(language, 'cancel'), style: 'cancel' },
+              { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteSkill(detail.id); setDetail(null); refresh(); } },
             ])} />
           </>
         ) : (
           <>
-            <Text style={styles.sub}>To use a skill in chat, start your message with /skill-name.</Text>
+            <Text style={styles.sub}>{t(language, 'skillHint')}</Text>
             {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
-            <Text style={[styles.title, { marginTop: 8 }]}>{editingId ? 'Edit skill' : 'Add a skill'}</Text>
-            <Field label="Skill name" onChangeText={setSkillName} value={skillName} />
-            <Field label="Skill instructions (markdown)" multiline onChangeText={setSkillTemplate} value={skillTemplate} />
-            <Button title={editingId ? 'Update skill' : 'Save skill'} onPress={addSkill} />
-            {editingId ? <><View style={{ height: 8 }} /><Button title="Cancel edit" variant="secondary" onPress={() => { setEditingId(null); setSkillName(''); setSkillTemplate(''); }} /></> : null}
-            {skills.length === 0 && <Card><Text style={styles.sub}>No skills yet. Save one above, or install one from GitHub.</Text></Card>}
+            <Text style={[styles.title, { marginTop: 8 }]}>{editingId ? t(language, 'editSkillBtn') : t(language, 'addSkillTitle')}</Text>
+            <Field label={t(language, 'skillName')} onChangeText={setSkillName} value={skillName} />
+            <Field label={t(language, 'skillInstructions')} multiline onChangeText={setSkillTemplate} value={skillTemplate} />
+            <Button title={editingId ? t(language, 'updateSkill') : t(language, 'saveSkillBtn')} onPress={addSkill} />
+            {editingId ? <><View style={{ height: 8 }} /><Button title={t(language, 'cancelEdit')} variant="secondary" onPress={() => { setEditingId(null); setSkillName(''); setSkillTemplate(''); }} /></> : null}
+            {skills.length === 0 && <Card><Text style={styles.sub}>{t(language, 'noSkills')}</Text></Card>}
             {skills.map((s) => (
               <Pressable key={s.id} onPress={() => setDetail(s)}>
                 <Card>

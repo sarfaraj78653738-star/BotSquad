@@ -6,7 +6,8 @@ import { ChatView } from '../src/components/ChatView';
 import { BotAvatar } from '../src/components/BotAvatar';
 import { avatarFor, MAIN_CHAT_AVATAR_DEFAULT } from '../src/lib/avatars';
 import { getSetting } from '../src/lib/db';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Main Chat — the app's opening screen. It is universal, not tied to
 // any bot: it works immediately with zero bots. Opening the app shows
@@ -17,6 +18,7 @@ import { useTokens } from '../src/lib/tokens';
 // the right — only once the thread has messages.
 export default function MainChatScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const params = useLocalSearchParams();
   const chatIdParam = typeof params.chatId === 'string' ? params.chatId : undefined;
@@ -34,7 +36,7 @@ export default function MainChatScreen() {
           <MenuButton />
           <View style={styles.titleRow}>
             <BotAvatar variant={avatarFor('main-chat', mainAvatar)} size={32} />
-            <Text style={styles.headerTitle} numberOfLines={1}>{bot?.name ?? 'Main Chat'}</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>{bot?.name ?? t(language, 'mainChat')}</Text>
           </View>
           {actions ?? <View style={{ width: 34 }} />}
         </View>

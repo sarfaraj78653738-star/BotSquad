@@ -3,9 +3,10 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import WebView from 'react-native-webview';
 import { Button } from './ui';
-import { useTokens } from '../lib/tokens';
+import { useLanguage, useTokens } from '../lib/tokens';
+import { t } from '../lib/i18n';
 import {
-  BrowserAction, describeAction, isLoginOrCaptchaPage, isSensitiveField, jsString, normalizeBrowserUrl,
+  BrowserAction, isLoginOrCaptchaPage, isSensitiveField, jsString, normalizeBrowserUrl,
 } from '../lib/liveBrowser';
 
 // Live in-chat browser panel. One WebView instance, kept mounted while
@@ -39,6 +40,7 @@ const MAX_LOG = 30;
 
 const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrowserPanel({ botName, onExpandedChange }, ref) {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const webRef = useRef<WebView>(null);
   const [open, setOpen] = useState(false);
@@ -67,15 +69,27 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
     onExpandedChange?.(v);
   }
 
+  function describe(a: BrowserAction): string {
+    switch (a.kind) {
+      case 'navigate': return `${t(language, 'logOpened')} ${hostnameOf(a.url)}`;
+      case 'back': return t(language, 'describeBack');
+      case 'forward': return t(language, 'describeForward');
+      case 'reload': return t(language, 'describeReload');
+      case 'scroll': return `${t(language, 'describeScrolled')} ${a.direction === 'down' ? t(language, 'scrollDown') : t(language, 'scrollUp')}`;
+      case 'tap': return `${t(language, 'describeTapped')} "${a.text}"`;
+      case 'type': return `${t(language, 'describeTyped')} "${a.field}"`;
+    }
+  }
+
   function openPanel(url?: string) {
     setOpen(true);
     setModeBoth('bot');
     if (url) {
       setCurrentUrl(url);
       setUrlInput(url);
-      pushLog(`Opened ${hostnameOf(url)}`);
+      pushLog(`${t(language, 'logOpened')} ${hostnameOf(url)}`);
     } else {
-      pushLog('Browser opened');
+      pushLog(t(language, 'logBrowserOpened'));
     }
   }
 
@@ -89,12 +103,12 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
   function requestAction(action: BrowserAction) {
     if (!open) return;
     if (modeRef.current !== 'bot') {
-      pushLog('Bot paused — you are in control.');
+      pushLog(t(language, 'logBotPaused'));
       return;
     }
     if (action.kind === 'tap' || action.kind === 'type') {
       if (action.kind === 'type' && isSensitiveField(action.field)) {
-        pushLog('Login field — you are in control. Bot paused.');
+        pushLog(t(language, 'logLoginField'));
         setModeBoth('user');
         return;
       }
@@ -119,7 +133,7 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
       const dy = action.direction === 'down' ? 600 : -600;
       webRef.current?.injectJavaScript(`window.scrollBy(0, ${dy}); true;`);
     }
-    pushLog(describeAction(action));
+    pushLog(describe(action));
   }
 
   function approvePending() {
@@ -141,7 +155,7 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
           else { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'bot-result', ok: false })); }
           return true;
         })(); true;`);
-      pushLog(`Approved: ${describeAction(action)}`);
+      pushLog(`${t(language, 'logApproved')} ${describe(action)}`);
     } else if (action.kind === 'type') {
       const field = jsString(action.field);
       const value = jsString(action.value);
@@ -163,14 +177,14 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
           window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'bot-result', ok: true }));
           return true;
         })(); true;`);
-      pushLog(`Approved: ${describeAction(action)}`);
+      pushLog(`${t(language, 'logApproved')} ${describe(action)}`);
     }
   }
 
   function rejectPending() {
     setPending(null);
     pendingRef.current = null;
-    pushLog('Bot action rejected by you.');
+    pushLog(t(language, 'logRejected'));
   }
 
   useImperativeHandle(ref, () => ({ open: openPanel, requestAction }));
@@ -180,7 +194,7 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
   return (
     <View style={[styles.panel, expanded && styles.panelExpanded]}>
       <View style={styles.topRow}>
-        <Text style={styles.title} numberOfLines={1}>Browser · {botName}</Text>
+        <Text style={styles.title} numberOfLines={1}>{t(language, 'browserWord')} · {botName}</Text>
         <Pressable accessibilityLabel="Close browser" onPress={() => { setOpen(false); setExpandedBoth(false); setPending(null); pendingRef.current = null; setModeBoth('bot'); }}>
           <Feather name="x" size={20} color={tokens.text} />
         </Pressable>
@@ -198,10 +212,10 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
         />
         <Pressable
           accessibilityLabel="Go to URL"
-          onPress={() => { const u = normalizeBrowserUrl(urlInput); if (u) { setCurrentUrl(u); pushLog(`Opened ${hostnameOf(u)}`); } }}
+          onPress={() => { const u = normalizeBrowserUrl(urlInput); if (u) { setCurrentUrl(u); pushLog(`${t(language, 'logOpened')} ${hostnameOf(u)}`); } }}
           style={styles.goButton}
         >
-          <Text style={styles.goText}>Go</Text>
+          <Text style={styles.goText}>{t(language, 'go')}</Text>
         </Pressable>
       </View>
       <View style={styles.controls}>
@@ -214,14 +228,14 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
         <Pressable accessibilityLabel="Browser reload" onPress={() => executeReadOnly({ kind: 'reload' })} style={styles.ctrlButton}>
           <Feather name="refresh-cw" size={18} color={tokens.text} />
         </Pressable>
-        <Text style={styles.modeText}>{mode === 'bot' ? 'Bot working' : 'You are in control'}</Text>
+        <Text style={styles.modeText}>{mode === 'bot' ? t(language, 'botWorkingMode') : t(language, 'userControl')}</Text>
         {mode === 'bot' ? (
-          <Pressable accessibilityLabel="Take Control" onPress={() => { setModeBoth('user'); pushLog('You took control. Bot paused.'); }} style={styles.takeButton}>
-            <Text style={styles.takeText}>Take Control</Text>
+          <Pressable accessibilityLabel="Take Control" onPress={() => { setModeBoth('user'); pushLog(t(language, 'logTookControl')); }} style={styles.takeButton}>
+            <Text style={styles.takeText}>{t(language, 'takeControl')}</Text>
           </Pressable>
         ) : (
-          <Pressable accessibilityLabel="Hand over to bot" onPress={() => { setModeBoth('bot'); pushLog(`Handed over to bot at ${currentUrl ? hostnameOf(currentUrl) : 'this page'}.`); }} style={styles.takeButton}>
-            <Text style={styles.takeText}>Hand over to bot</Text>
+          <Pressable accessibilityLabel="Hand over to bot" onPress={() => { setModeBoth('bot'); pushLog(`${t(language, 'logHandedOver')} ${currentUrl ? hostnameOf(currentUrl) : t(language, 'logThisPage')}.`); }} style={styles.takeButton}>
+            <Text style={styles.takeText}>{t(language, 'handOver')}</Text>
           </Pressable>
         )}
         <Pressable accessibilityLabel={expanded ? 'Shrink browser' : 'Expand browser'} onPress={() => setExpandedBoth(!expanded)} style={styles.ctrlButton}>
@@ -230,11 +244,11 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
       </View>
       {pending ? (
         <View style={styles.approval}>
-          <Text style={styles.approvalText}>Bot wants to: {describeAction(pending)}</Text>
-          <Text style={styles.approvalSub}>Approve to run it once. Passwords are never typed by the bot.</Text>
+          <Text style={styles.approvalText}>{t(language, 'botWantsTo')} {describe(pending)}</Text>
+          <Text style={styles.approvalSub}>{t(language, 'approveOnce')}</Text>
           <View style={styles.approvalRow}>
-            <Button title="Approve" onPress={approvePending} />
-            <Button title="Reject" variant="secondary" onPress={rejectPending} />
+            <Button title={t(language, 'approve')} onPress={approvePending} />
+            <Button title={t(language, 'reject')} variant="secondary" onPress={rejectPending} />
           </View>
         </View>
       ) : null}
@@ -259,22 +273,22 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
               // the user. The bot never signs in or bypasses a check.
               if (modeRef.current === 'bot' && isLoginOrCaptchaPage(nav.url, nav.title)) {
                 setModeBoth('user');
-                pushLog('Login or check needed — you are in control. Bot paused.');
+                pushLog(t(language, 'logLoginCheck'));
               }
             }}
             onMessage={(e) => {
               try {
                 const data = JSON.parse(e.nativeEvent.data) as { type?: string; ok?: boolean };
-                if (data.type === 'bot-result') pushLog(data.ok ? 'Bot action done.' : 'Bot action did not find that element.');
+                if (data.type === 'bot-result') pushLog(data.ok ? t(language, 'logDone') : t(language, 'logNotFound'));
               } catch { /* Non-JSON page messages are ignored. */ }
             }}
           />
         ) : (
-          <Text style={styles.sub}>Enter a URL above, or ask the bot to open a site.</Text>
+          <Text style={styles.sub}>{t(language, 'enterUrl')}</Text>
         )}
       </View>
       <View style={styles.logBox}>
-        <Text style={styles.logTitle}>What the bot did</Text>
+        <Text style={styles.logTitle}>{t(language, 'whatBotDid')}</Text>
         {log.slice(-3).map((line, i) => (
           <Text key={`${i}-${line}`} style={styles.logLine} numberOfLines={1}>{line}</Text>
         ))}

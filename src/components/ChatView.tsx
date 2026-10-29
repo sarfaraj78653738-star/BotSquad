@@ -25,7 +25,8 @@ import { ThreadMenu } from './ThreadMenu';
 import { chatWithBot } from '../lib/providers';
 import { errorCode, isRawErrorText } from '../lib/errors';
 import { Bot, Message, newId, nowIso } from '../lib/types';
-import { useTokens } from '../lib/tokens';
+import { useLanguage, useTokens } from '../lib/tokens';
+import { t, translateApproval } from '../lib/i18n';
 
 // Shared chat surface used by Main Chat, a single bot's chat screen,
 // and (in universal mode) the bot-free Main Chat. All message,
@@ -58,6 +59,7 @@ function makeUniversalBot(): Bot {
 
 export function ChatView({ botId, universal, universalChatId, topBar }: { botId?: string; universal?: boolean; universalChatId?: string; topBar: (bot: Bot | null, actions?: React.ReactNode) => React.ReactNode }) {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [bot, setBot] = useState<Bot | null>(() => (universal ? makeUniversalBot() : null));
@@ -78,7 +80,8 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
   const [pendingApproval, setPendingApproval] = useState<{ summary: string; preview: string; resolve: (ok: boolean) => void } | null>(null);
 
   function requestApproval(summary: string, preview: string): Promise<boolean> {
-    return new Promise((resolve) => setPendingApproval({ summary, preview, resolve }));
+    const translated = translateApproval(language, summary, preview);
+    return new Promise((resolve) => setPendingApproval({ summary: translated.summary, preview: translated.preview, resolve }));
   }
   const [adsRemoved, setAdsRemoved] = useState(false);
   const [voiceNote, setVoiceNote] = useState('');
@@ -186,7 +189,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     try {
       await exportChatZip(threadTitle, messages.map((m) => ({ role: m.role, text: m.text })));
     } catch {
-      Alert.alert('Export failed', 'The ZIP could not be created. Try again.');
+      Alert.alert(t(language, 'exportFailed'), t(language, 'zipFailed'));
     }
   }
 
@@ -229,7 +232,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     // saved model, say so plainly instead of sending with a blank
     // model name and showing a cryptic provider error.
     if (universal && !(await getUniversal()).model.trim()) {
-      setNotice('No model is set yet. Save your model in Settings, then chat here.');
+      setNotice(t(language, 'noModelNotice'));
       return;
     }
     // Browser intent in the user's own words opens the in-chat panel
@@ -430,7 +433,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     void send(`[Attachment: ${att.name} (${size})] — the file itself was not uploaded or read; treat this only as a note that the user attached it.`);
   }
 
-  if (!bot) return <View style={styles.wrap}><Text style={styles.sub}>Loading bot…</Text></View>;
+  if (!bot) return <View style={styles.wrap}><Text style={styles.sub}>{t(language, 'loadingBot')}</Text></View>;
 
   return (
     <View style={styles.wrap}>
@@ -471,16 +474,16 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
               <View style={styles.msgActions}>
                 <Pressable
                   accessibilityLabel="Save as artifact"
-                  onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert('Saved', 'Saved to Artifacts.'); }}
+                  onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert(t(language, 'saved'), t(language, 'savedToArtifacts')); }}
                 >
-                  <Text style={styles.saveArtifact}>Save as artifact</Text>
+                  <Text style={styles.saveArtifact}>{t(language, 'saveAsArtifact')}</Text>
                 </Pressable>
               </View>
             </View>
           );
         }}
       />}
-      {loading && <LoadingRow label="Bot is working…" />}
+      {loading && <LoadingRow label={t(language, 'botWorking')} />}
       {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
 
       {failedCode !== null && failedText ? (
@@ -491,7 +494,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
             onPress={() => { const t = failedText; setFailedCode(null); setFailedText(null); void send(t, true); }}
             style={styles.retryButton}
           >
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{t(language, 'retry')}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -512,12 +515,12 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       />
       {pendingApproval ? (
         <View style={styles.approvalCard}>
-          <Text style={styles.approvalTitle}>Agent wants to change a file</Text>
+          <Text style={styles.approvalTitle}>{t(language, 'approvalFile')}</Text>
           <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
           <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
           <View style={styles.approvalRow}>
-            <Button title="Approve" onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
-            <Button title="Reject" variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
+            <Button title={t(language, 'approve')} onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
+            <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
           </View>
         </View>
       ) : null}
@@ -525,7 +528,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         <ComposerBar
           input={input}
           onChangeText={setInput}
-          placeholder={universal ? 'Message…' : 'Message this bot…'}
+          placeholder={universal ? t(language, 'messagePlaceholder') : t(language, 'messageBotPlaceholder')}
           loading={loading}
           onSend={() => { const t = input; setInput(''); voiceBase.current = ''; void send(t); }}
           onAttachment={handleAttachment}

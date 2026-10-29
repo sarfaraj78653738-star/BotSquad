@@ -4,7 +4,8 @@ import { MenuButton } from '../../src/components/Drawer';
 import { ChatView } from '../../src/components/ChatView';
 import { BotAvatar } from '../../src/components/BotAvatar';
 import { avatarFor } from '../../src/lib/avatars';
-import { useTokens } from '../../src/lib/tokens';
+import { useLanguage, useTokens } from '../../src/lib/tokens';
+import { t } from '../../src/lib/i18n';
 
 // A single bot's chat, reached from Bots or History. It reuses the same
 // ChatView as Main Chat. Its header follows the same pattern as the
@@ -15,10 +16,11 @@ import { useTokens } from '../../src/lib/tokens';
 // thread menu arrives on the right once the chat has messages.
 export default function BotChatScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  if (!id) return <View style={styles.wrap}><Text style={styles.sub}>Loading chat…</Text></View>;
+  if (!id) return <View style={styles.wrap}><Text style={styles.sub}>{t(language, 'loadingChat')}</Text></View>;
   return (
     <ChatView
       botId={id}
@@ -27,7 +29,7 @@ export default function BotChatScreen() {
           <MenuButton />
           <View style={styles.titleRow}>
             {bot ? <BotAvatar variant={avatarFor(bot.id, bot.avatar)} size={32} /> : null}
-            <Text style={styles.headerTitle} numberOfLines={1}>{bot ? bot.name : 'Chat'}</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>{bot ? bot.name : t(language, 'chatFallback')}</Text>
           </View>
           <View style={styles.rightRow}>
             <Pressable
@@ -35,7 +37,7 @@ export default function BotChatScreen() {
               onPress={() => router.push('/bot/new' as never)}
               style={styles.newButton}
             >
-              <Text style={styles.newText}>+ New</Text>
+              <Text style={styles.newText}>{t(language, 'newPlus')}</Text>
             </Pressable>
             {actions}
           </View>

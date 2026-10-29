@@ -7,7 +7,8 @@ import { deleteMcpServer, listMcpServers, saveMcpServer } from '../src/lib/db';
 import { deleteMcpToken, getMcpToken, setMcpToken } from '../src/lib/connections';
 import { listMcpTools, prepareMcpCall, requireHttpsUrl } from '../src/lib/mcp';
 import { McpServer, McpTool, newId, nowIso } from '../src/lib/types';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // MCP servers, skill-style (user order 2026-10-29): this screen is
 // ONLY the saved-servers library. No "selected bot" picker, no
@@ -19,6 +20,7 @@ import { useTokens } from '../src/lib/tokens';
 // bot_mcp_tools rows are unused (table kept, harmless).
 export default function McpScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -47,21 +49,21 @@ export default function McpScreen() {
   }
 
   async function addMcpServer() {
-    if (!mcpName.trim() || !mcpUrl.trim()) { Alert.alert('Check MCP server', 'A server needs a name and an https:// URL.'); return; }
-    try { requireHttpsUrl(mcpUrl.trim(), 'MCP server URL'); } catch (e) { Alert.alert('Check MCP server', e instanceof Error ? e.message : 'MCP server URL must be https://'); return; }
+    if (!mcpName.trim() || !mcpUrl.trim()) { Alert.alert(t(language, 'checkMcp'), t(language, 'needsNameUrl')); return; }
+    try { requireHttpsUrl(mcpUrl.trim(), 'MCP server URL'); } catch (e) { Alert.alert(t(language, 'checkMcp'), e instanceof Error ? e.message : t(language, 'urlMustHttps')); return; }
     const id = newId();
     await saveMcpServer({ id, name: mcpName.trim(), url: mcpUrl.trim(), createdAt: nowIso() });
     if (mcpToken.trim()) await setMcpToken(id, mcpToken);
     setMcpName(''); setMcpUrl(''); setMcpTokenValue('');
-    setMsg(`${mcpName.trim()} saved. Call it out in any chat with /${mcpName.trim().toLowerCase().replace(/[\s\-_]+/g, '')}.`);
+    setMsg(`${mcpName.trim()} ${t(language, 'mcpSavedNote')} /${mcpName.trim().toLowerCase().replace(/[\s\-_]+/g, '')}.`);
     refresh();
   }
 
   async function deleteServer(s: McpServer) {
-    Alert.alert('Delete MCP server?', `${s.name} will be removed.`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t(language, 'deleteMcpTitle'), `${s.name} ${t(language, 'willBeRemovedGeneric')}`, [
+      { text: t(language, 'cancel'), style: 'cancel' },
       {
-        text: 'Delete', style: 'destructive',
+        text: t(language, 'delete'), style: 'destructive',
         onPress: async () => { await deleteMcpToken(s.id); await deleteMcpServer(s.id); setDetail(null); refresh(); },
       },
     ]);
@@ -77,7 +79,7 @@ export default function McpScreen() {
       const res = await fetch(call._serverUrl, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: call.jsonrpc, id: call.id, method: call.method, params: call.params }) });
       setCallResult(await res.text());
     } catch (e) {
-      setCallResult(e instanceof Error ? e.message : 'Call failed.');
+      setCallResult(e instanceof Error ? e.message : t(language, 'callFailed'));
     }
     setPendingCall('');
   }
@@ -88,53 +90,53 @@ export default function McpScreen() {
         {detail ? (
           <Pressable accessibilityLabel="Back to MCP servers" onPress={() => setDetail(null)} style={styles.backRow}>
             <Feather name="chevron-left" size={22} color={tokens.text} />
-            <Text style={styles.backText}>MCP servers</Text>
+            <Text style={styles.backText}>{t(language, 'mcpServers')}</Text>
           </Pressable>
         ) : (
           <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
             <Feather name="chevron-left" size={22} color={tokens.text} />
-            <Text style={styles.backText}>Settings</Text>
+            <Text style={styles.backText}>{t(language, 'settings')}</Text>
           </Pressable>
         )}
-        <Text style={styles.headerTitle}>{detail ? detail.name : 'MCP servers'}</Text>
+        <Text style={styles.headerTitle}>{detail ? detail.name : t(language, 'mcpServers')}</Text>
         <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
         {detail ? (
           <>
             <Text style={styles.sub}>{detail.url}</Text>
-            <Text style={styles.sub}>Token: {hasToken ? 'saved in secure storage, never shown here.' : 'none saved.'}</Text>
-            <Button title="List tools" variant="secondary" onPress={async () => { try { setTools(await listMcpTools(detail.id, detail.url)); } catch (e) { setMsg(e instanceof Error ? e.message : 'Could not list tools.'); } }} />
-            {tools.map((t) => (
-              <View key={t.name} style={{ marginTop: 12 }}>
-                <Text style={styles.bold}>{t.name}</Text>
-                <Text style={styles.sub}>{t.description}</Text>
-                <Button title="Prepare a call (needs your approval)" variant="secondary" onPress={() => setPendingCall(JSON.stringify(prepareMcpCall(detail.url, t.name, {}, detail.id), null, 2))} />
+            <Text style={styles.sub}>{t(language, 'tokenLabel')} {hasToken ? t(language, 'tokenSaved') : t(language, 'tokenNone')}</Text>
+            <Button title={t(language, 'listTools')} variant="secondary" onPress={async () => { try { setTools(await listMcpTools(detail.id, detail.url)); } catch (e) { setMsg(e instanceof Error ? e.message : t(language, 'couldNotList')); } }} />
+            {tools.map((tool) => (
+              <View key={tool.name} style={{ marginTop: 12 }}>
+                <Text style={styles.bold}>{tool.name}</Text>
+                <Text style={styles.sub}>{tool.description}</Text>
+                <Button title={t(language, 'prepareCall')} variant="secondary" onPress={() => setPendingCall(JSON.stringify(prepareMcpCall(detail.url, tool.name, {}, detail.id), null, 2))} />
               </View>
             ))}
             {pendingCall ? (
               <Card>
-                <Text style={styles.bold}>Pending MCP call — NOT sent yet</Text>
+                <Text style={styles.bold}>{t(language, 'pendingCallTitle')}</Text>
                 <Text style={styles.sub}>{pendingCall}</Text>
-                <Button title="Approve & send this call" onPress={() => { void sendPendingCall(); }} />
+                <Button title={t(language, 'approveSend')} onPress={() => { void sendPendingCall(); }} />
                 <View style={{ height: 8 }} />
-                <Button title="Cancel (do not send)" variant="secondary" onPress={() => setPendingCall('')} />
+                <Button title={t(language, 'cancelDoNotSend')} variant="secondary" onPress={() => setPendingCall('')} />
               </Card>
             ) : null}
-            {callResult ? <Card><Text style={styles.bold}>MCP call result</Text><Text>{callResult.slice(0, 2000)}</Text></Card> : null}
+            {callResult ? <Card><Text style={styles.bold}>{t(language, 'callResultTitle')}</Text><Text>{callResult.slice(0, 2000)}</Text></Card> : null}
             {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
             <View style={{ height: 12 }} />
-            <Button title="Delete MCP server" variant="danger" onPress={() => { void deleteServer(detail); }} />
+            <Button title={t(language, 'deleteMcpBtn')} variant="danger" onPress={() => { void deleteServer(detail); }} />
           </>
         ) : (
           <>
-            <Text style={styles.title}>Add a server</Text>
-            <Field label="Server name" onChangeText={setMcpName} value={mcpName} />
-            <Field label="Server URL (https://…)" onChangeText={setMcpUrl} value={mcpUrl} />
-            <Field label="Optional token (secure storage only)" secure onChangeText={setMcpTokenValue} value={mcpToken} />
-            <Button title="Save MCP server" onPress={addMcpServer} />
+            <Text style={styles.title}>{t(language, 'addServerTitle')}</Text>
+            <Field label={t(language, 'serverName')} onChangeText={setMcpName} value={mcpName} />
+            <Field label={t(language, 'serverUrl')} onChangeText={setMcpUrl} value={mcpUrl} />
+            <Field label={t(language, 'optionalToken')} secure onChangeText={setMcpTokenValue} value={mcpToken} />
+            <Button title={t(language, 'saveMcpBtn')} onPress={addMcpServer} />
             {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
-            <Text style={styles.hint}>To use a server in chat, start your message with /server-name.</Text>
+            <Text style={styles.hint}>{t(language, 'mcpHint')}</Text>
             {servers.map((s) => (
               <Pressable key={s.id} onPress={() => { void openDetail(s); }}>
                 <Card>

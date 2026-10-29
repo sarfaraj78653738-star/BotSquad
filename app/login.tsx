@@ -8,7 +8,8 @@ import { BotAvatar } from '../src/components/BotAvatar';
 import { Button, Card, Field } from '../src/components/ui';
 import { AVATAR_VARIANTS } from '../src/lib/avatars';
 import { completeGoogleSignIn, getGoogleClientId, getGoogleUser, GOOGLE_DISCOVERY, GOOGLE_REDIRECT_URI, GOOGLE_SCOPES, GoogleUser, setGoogleClientId, signOutGoogle } from '../src/lib/googleAuth';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -27,6 +28,7 @@ const SUNNY = AVATAR_VARIANTS.find((v) => v.id === 'sunny') ?? AVATAR_VARIANTS[0
 
 export default function LoginScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [clientId, setClientId] = useState('');
@@ -64,7 +66,7 @@ export default function LoginScreen() {
         setUser(u);
         setMsg('');
       } catch (e) {
-        setMsg(e instanceof Error ? e.message : 'Google sign-in failed.');
+        setMsg(e instanceof Error ? e.message : t(language, 'signInFailed'));
       } finally {
         setBusy(false);
       }
@@ -77,7 +79,7 @@ export default function LoginScreen() {
     try {
       await promptAsync();
     } catch {
-      setMsg('Could not open Google sign-in. Try again.');
+      setMsg(t(language, 'couldNotOpenSignIn'));
     }
   }
 
@@ -88,7 +90,7 @@ export default function LoginScreen() {
 
   async function saveClientId() {
     const id = draftClientId.trim();
-    if (!id) { setMsg('Paste the Client ID first.'); return; }
+    if (!id) { setMsg(t(language, 'pasteFirst')); return; }
     await setGoogleClientId(id);
     setClientId(id);
     setMsg('');
@@ -106,37 +108,37 @@ export default function LoginScreen() {
 
       <View style={styles.middle}>
         <BotAvatar variant={SUNNY} size={120} />
-        <Text style={styles.tagline}>Your team of AI bots, in your pocket.</Text>
+        <Text style={styles.tagline}>{t(language, 'tagline')}</Text>
       </View>
 
       <View style={styles.bottom}>
         {user ? (
           <>
-            <Text style={styles.signedIn}>Signed in as {user.name}</Text>
+            <Text style={styles.signedIn}>{t(language, 'signedInAs')} {user.name}</Text>
             <Text style={styles.signedInSub}>{user.email}</Text>
             <Pressable onPress={() => { void signOut(); }} style={styles.googleButton}>
-              <Text style={styles.googleButtonText}>Sign out</Text>
+              <Text style={styles.googleButtonText}>{t(language, 'signOut')}</Text>
             </Pressable>
           </>
         ) : !clientIdLoaded ? null : clientId ? (
           <Pressable onPress={() => { void signIn(); }} disabled={busy || !request} style={styles.googleButton}>
             <View style={styles.gMark}><Text style={styles.gLetter}>G</Text></View>
-            <Text style={styles.googleButtonText}>{busy ? 'Signing in…' : 'Continue with Google'}</Text>
+            <Text style={styles.googleButtonText}>{busy ? t(language, 'signingIn') : t(language, 'continueGoogle')}</Text>
           </Pressable>
         ) : (
           <Card>
-            <Text style={styles.setupTitle}>One-time setup</Text>
-            <Text style={styles.setupSub}>Google Cloud Console → Credentials → OAuth client ID → Desktop app. Paste the Client ID here once; after that this screen shows only the Google button.</Text>
-            <Field label="Google Client ID" placeholder="123456789-abc.apps.googleusercontent.com" onChangeText={setDraftClientId} value={draftClientId} />
-            <Button title="Save Client ID" onPress={() => { void saveClientId(); }} />
+            <Text style={styles.setupTitle}>{t(language, 'setupTitle')}</Text>
+            <Text style={styles.setupSub}>{t(language, 'setupSub')}</Text>
+            <Field label={t(language, 'googleClientId')} placeholder="123456789-abc.apps.googleusercontent.com" onChangeText={setDraftClientId} value={draftClientId} />
+            <Button title={t(language, 'saveClientId')} onPress={() => { void saveClientId(); }} />
           </Card>
         )}
         {msg ? <Text style={styles.msgText}>{msg}</Text> : null}
         <Text style={styles.legal}>
-          By continuing, you agree to BotSquad's{' '}
-          <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } } as never)}>Terms of Use</Text>
-          {' '}and{' '}
-          <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } } as never)}>Privacy Policy</Text>.
+          {t(language, 'agreePrefix')}{' '}
+          <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } } as never)}>{t(language, 'legalTerms')}</Text>
+          {' '}{t(language, 'andWord')}{' '}
+          <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } } as never)}>{t(language, 'legalPrivacy')}</Text>{t(language, 'agreeSuffix')}
         </Text>
       </View>
     </View>

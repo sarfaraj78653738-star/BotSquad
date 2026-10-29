@@ -1,4 +1,6 @@
 import { CatalogService } from './connectionCatalog';
+import { Language } from './tokens';
+import { t } from './i18n';
 
 // Live verification for the Connect flow (user order 2026-10-29):
 // tapping Connect asks only for what that service needs, then the app
@@ -79,19 +81,19 @@ async function callApi(url: string, method: string, headers: Record<string, stri
   }
 }
 
-function httpError(status: number): string {
-  if (status === 401 || status === 403) return 'Details galat hain. Dobara check karo.';
-  if (status === 404) return 'Server ya domain nahi mila. Domain dobara check karo.';
-  return `Service ne mana kar diya (HTTP ${status}).`;
+function httpError(status: number, lang: Language): string {
+  if (status === 401 || status === 403) return t(lang, 'verifyBadDetails');
+  if (status === 404) return t(lang, 'verifyDomain');
+  return `${t(lang, 'verifyRefused')} (HTTP ${status}).`;
 }
 
-export async function verifyConnection(service: CatalogService, rawValues: Record<string, string>): Promise<VerifyResult> {
+export async function verifyConnection(service: CatalogService, rawValues: Record<string, string>, lang: Language = 'en'): Promise<VerifyResult> {
   const values = normalizeValues(service, rawValues);
   const spec = service.verify;
   try {
     if (spec.type === 'session') {
       const { status, json } = await callApi(fill(spec.url, values), 'POST', { 'Content-Type': 'application/json' }, fill(spec.body, values));
-      if (status < 200 || status >= 300) return { ok: false, error: httpError(status) };
+      if (status < 200 || status >= 300) return { ok: false, error: httpError(status, lang) };
       const account = spec.accountPath ? getPath(json, spec.accountPath) : undefined;
       return { ok: true, account: typeof account === 'string' ? account : undefined };
     }
@@ -99,26 +101,26 @@ export async function verifyConnection(service: CatalogService, rawValues: Recor
       const tokenHeaders = fillHeaders(spec.tokenHeaders, values, spec.basic);
       if (spec.tokenBody) tokenHeaders['Content-Type'] = tokenHeaders['Content-Type'] ?? 'application/x-www-form-urlencoded';
       const tokenRes = await callApi(fill(spec.tokenUrl, values), 'POST', tokenHeaders, spec.tokenBody || undefined);
-      if (tokenRes.status < 200 || tokenRes.status >= 300) return { ok: false, error: httpError(tokenRes.status) };
+      if (tokenRes.status < 200 || tokenRes.status >= 300) return { ok: false, error: httpError(tokenRes.status, lang) };
       const accessToken = getPath(tokenRes.json, 'access_token');
       if (!spec.meUrl) return { ok: true };
-      if (typeof accessToken !== 'string') return { ok: false, error: 'Service ne token nahi diya. Dobara try karo.' };
+      if (typeof accessToken !== 'string') return { ok: false, error: t(lang, 'verifyNoToken') };
       const meRes = await callApi(fill(spec.meUrl, values), 'GET', { ...(spec.meHeaders ?? {}), Authorization: `Bearer ${accessToken}` });
-      if (meRes.status < 200 || meRes.status >= 300) return { ok: false, error: httpError(meRes.status) };
+      if (meRes.status < 200 || meRes.status >= 300) return { ok: false, error: httpError(meRes.status, lang) };
       const account = spec.accountPath ? getPath(meRes.json, spec.accountPath) : undefined;
       return { ok: true, account: typeof account === 'string' ? account : undefined };
     }
     // Plain API call.
     const headers = fillHeaders(spec.headers, values, spec.basic);
     const { status, json } = await callApi(fill(spec.url, values), spec.method ?? 'GET', headers, spec.body ? fill(spec.body, values) : undefined);
-    if (status < 200 || status >= 300) return { ok: false, error: httpError(status) };
+    if (status < 200 || status >= 300) return { ok: false, error: httpError(status, lang) };
     if (spec.okPath) {
       const okVal = getPath(json, spec.okPath);
-      if (okVal !== true) return { ok: false, error: 'Details galat hain. Dobara check karo.' };
+      if (okVal !== true) return { ok: false, error: t(lang, 'verifyBadDetails') };
     }
     const account = spec.accountPath ? getPath(json, spec.accountPath) : undefined;
     return { ok: true, account: typeof account === 'string' ? account : undefined };
   } catch {
-    return { ok: false, error: 'Network issue — internet check karo, phir try karo.' };
+    return { ok: false, error: t(lang, 'verifyNetwork') };
   }
 }

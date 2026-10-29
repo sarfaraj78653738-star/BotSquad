@@ -19,7 +19,7 @@ import { isRawErrorText } from '../src/lib/errors';
 import { saveArtifactFromReply } from '../src/lib/projects';
 import { Bot, GroupMessage, GroupThread } from '../src/lib/types';
 import { useLanguage, useTokens } from '../src/lib/tokens';
-import { t } from '../src/lib/i18n';
+import { t, translateApproval } from '../src/lib/i18n';
 
 // Group tab: pick 2+ bots, send one message, each bot replies in turn with
 // its own task/personality and its own provider/model, in turn.
@@ -54,7 +54,8 @@ export default function GroupScreen() {
   const [pendingApproval, setPendingApproval] = useState<{ summary: string; preview: string; resolve: (ok: boolean) => void } | null>(null);
 
   function requestApproval(summary: string, preview: string): Promise<boolean> {
-    return new Promise((resolve) => setPendingApproval({ summary, preview, resolve }));
+    const translated = translateApproval(language, summary, preview);
+    return new Promise((resolve) => setPendingApproval({ summary: translated.summary, preview: translated.preview, resolve }));
   }
   const appliedThreadId = useRef<string | null>(null);
   // Live in-chat browser for the group thread, same rules as ChatView:
@@ -301,19 +302,19 @@ export default function GroupScreen() {
                 onPress={() => { const t = failedText; setFailedCode(null); setFailedText(null); void send(t, true); }}
                 style={styles.retryButton}
               >
-                <Text style={styles.retryText}>Retry</Text>
+                <Text style={styles.retryText}>{t(language, 'retry')}</Text>
               </Pressable>
             </View>
           ) : null}
-          <LiveBrowserPanel ref={browserRef} botName="Group" onExpandedChange={setBrowserExpanded} />
+          <LiveBrowserPanel ref={browserRef} botName={t(language, 'group')} onExpandedChange={setBrowserExpanded} />
           {pendingApproval ? (
             <View style={styles.approvalCard}>
-              <Text style={styles.approvalTitle}>Agent wants to run a tool</Text>
+              <Text style={styles.approvalTitle}>{t(language, 'approvalTool')}</Text>
               <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
               <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
               <View style={styles.approvalRow}>
-                <Button title="Approve" onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
-                <Button title="Reject" variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
+                <Button title={t(language, 'approve')} onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
+                <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
               </View>
             </View>
           ) : null}

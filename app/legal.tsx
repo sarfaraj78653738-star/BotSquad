@@ -4,7 +4,8 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { Feather } from '@expo/vector-icons';
 import { Button } from '../src/components/ui';
 import { LEGAL_DOCS, LegalDoc } from '../src/lib/legalDocs';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Legal section (user order 2026-10-29): everything legal lives here,
 // not as a wall of text on the Settings page — Privacy, Terms, Ads,
@@ -13,20 +14,33 @@ import { useTokens } from '../src/lib/tokens';
 // policies for the GitHub version, not a lawyer's review.
 export default function LegalScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const params = useLocalSearchParams();
   const initialDoc = typeof params.doc === 'string' ? LEGAL_DOCS.find((d) => d.id === params.doc) ?? null : null;
   const [doc, setDoc] = useState<LegalDoc | null>(initialDoc);
+  const titleFor = (id: string) => {
+    switch (id) {
+      case 'privacy': return t(language, 'legalPrivacy');
+      case 'terms': return t(language, 'legalTerms');
+      case 'ads': return t(language, 'legalAds');
+      case 'refund': return t(language, 'legalRefund');
+      case 'cookies': return t(language, 'legalCookies');
+      case 'data': return t(language, 'legalData');
+      case 'feedback': return t(language, 'legalFeedback');
+      default: return id;
+    }
+  };
 
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
-          <Text style={styles.backText}>Settings</Text>
+          <Text style={styles.backText}>{t(language, 'settings')}</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Legal</Text>
+        <Text style={styles.headerTitle}>{t(language, 'legal')}</Text>
         <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
@@ -34,18 +48,18 @@ export default function LegalScreen() {
           <>
             <Pressable onPress={() => setDoc(null)} style={styles.backRow}>
               <Feather name="chevron-left" size={22} color={tokens.text} />
-              <Text style={styles.backText}>Legal</Text>
+              <Text style={styles.backText}>{t(language, 'legal')}</Text>
             </Pressable>
-            <Text style={styles.title}>{doc.title}</Text>
+            <Text style={styles.title}>{titleFor(doc.id)}</Text>
             <Text style={styles.bodyText}>{doc.body}</Text>
-            {doc.action ? <Button title={doc.action.label} onPress={() => { void Linking.openURL(doc.action!.url); }} /> : null}
+            {doc.action ? <Button title={t(language, 'openIssues')} onPress={() => { void Linking.openURL(doc.action!.url); }} /> : null}
           </>
         ) : (
           <>
-            <Text style={styles.sub}>Plain-language policies for the GitHub version. Before any store release, have them reviewed by a lawyer.</Text>
+            <Text style={styles.sub}>{t(language, 'legalNote')}</Text>
             {LEGAL_DOCS.map((d) => (
               <Pressable key={d.id} onPress={() => setDoc(d)} style={styles.row}>
-                <Text style={styles.rowTitle}>{d.title}</Text>
+                <Text style={styles.rowTitle}>{titleFor(d.id)}</Text>
                 <Feather name="chevron-right" size={20} color={tokens.textMuted} />
               </Pressable>
             ))}

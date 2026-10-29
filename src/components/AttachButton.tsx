@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { useTokens } from '../lib/tokens';
+import { useLanguage, useTokens } from '../lib/tokens';
+import { t } from '../lib/i18n';
 
 // Attach (+) button. Tapping it opens a bottom sheet titled
 // "Add to chat" with Camera, Photos, and Files. Picking an item does
@@ -16,6 +17,7 @@ export function AttachButton({ onAttachment, disabled, variant }: {
   variant?: 'circle' | 'flat';
 }) {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const insets = useSafeAreaInsets();
   const styles = getStyles(tokens);
   const [open, setOpen] = useState(false);
@@ -68,9 +70,9 @@ export function AttachButton({ onAttachment, disabled, variant }: {
   }
 
   const options: { label: string; icon: React.ComponentProps<typeof Feather>['name']; onPress: () => void }[] = [
-    { label: 'Camera', icon: 'camera', onPress: () => { void pickCamera(); } },
-    { label: 'Photos', icon: 'image', onPress: () => { void pickPhoto(); } },
-    { label: 'Files', icon: 'file', onPress: () => { void pickDocument(); } },
+    { label: t(language, 'camera'), icon: 'camera', onPress: () => { void pickCamera(); } },
+    { label: t(language, 'photos'), icon: 'image', onPress: () => { void pickPhoto(); } },
+    { label: t(language, 'filesBack'), icon: 'file', onPress: () => { void pickDocument(); } },
   ];
 
   return (
@@ -88,7 +90,7 @@ export function AttachButton({ onAttachment, disabled, variant }: {
         <Pressable accessibilityLabel="Close attach menu" onPress={() => setOpen(false)} style={styles.backdrop} />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 28 }]}>
           <View style={styles.sheetHead}>
-            <Text style={styles.sheetTitle}>Add to chat</Text>
+            <Text style={styles.sheetTitle}>{t(language, 'addToChat')}</Text>
             <Pressable accessibilityLabel="Close attach menu" onPress={() => setOpen(false)} style={styles.closeButton}>
               <Feather name="x" size={20} color={tokens.text} />
             </Pressable>
