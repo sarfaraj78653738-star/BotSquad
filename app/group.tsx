@@ -18,13 +18,15 @@ import { runGroupMessage } from '../src/lib/group';
 import { isRawErrorText } from '../src/lib/errors';
 import { saveArtifactFromReply } from '../src/lib/projects';
 import { Bot, GroupMessage, GroupThread } from '../src/lib/types';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Group tab: pick 2+ bots, send one message, each bot replies in turn with
-// its own task/personality and its own provider/model, then a summary.
+// its own task/personality and its own provider/model, in turn.
 // A bot with no key does NOT fake a reply — it gets a clear status note.
 export default function GroupScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
   const [bots, setBots] = useState<Bot[]>([]);
@@ -86,13 +88,13 @@ export default function GroupScreen() {
   }, [threadId, threads]);
 
   async function createThread() {
-    if (picked.length < 2) { setError('Pick at least 2 bots for a group chat.'); return; }
+    if (picked.length < 2) { setError(t(language, 'pickAtLeast2')); return; }
     setError('');
-    const t = await createGroupThread(newTitle, picked);
+    const thread = await createGroupThread(newTitle, picked);
     setNewTitle('');
     setPicked([]);
     await refresh();
-    await openThread(t);
+    await openThread(thread);
   }
 
   async function send(textOverride?: string, reuseUser = false) {
@@ -209,10 +211,10 @@ export default function GroupScreen() {
 
       {!selected && (
         <View style={styles.body}>
-          <Text style={styles.sub}>Bots reply in turn, then a summary.</Text>
+          <Text style={styles.sub}>{t(language, 'groupIntro')}</Text>
           {error ? <Card><Text style={{ color: tokens.danger }}>{error}</Text></Card> : null}
-          <Text style={styles.h}>New group</Text>
-          <TextInput accessibilityLabel="Group title" onChangeText={setNewTitle} placeholder="Group title (optional)" placeholderTextColor={tokens.textMuted} style={styles.input} value={newTitle} />
+          <Text style={styles.h}>{t(language, 'newGroup')}</Text>
+          <TextInput accessibilityLabel="Group title" onChangeText={setNewTitle} placeholder={t(language, 'groupTitlePlaceholder')} placeholderTextColor={tokens.textMuted} style={styles.input} value={newTitle} />
           {bots.map((b) => (
             <Pressable key={b.id} onPress={() => setPicked((p) => (p.includes(b.id) ? p.filter((x) => x !== b.id) : [...p, b.id]))}>
               <Card>
@@ -225,8 +227,8 @@ export default function GroupScreen() {
             </Pressable>
           ))}
           {bots.length === 0 && <Card><Text style={styles.sub}>No bots yet. Create bots on the Bots screen first.</Text></Card>}
-          <Button title="Create group (2+ bots)" disabled={picked.length < 2} onPress={createThread} />
-          <Text style={styles.h}>Past groups</Text>
+          <Button title={t(language, 'createGroup')} disabled={picked.length < 2} onPress={createThread} />
+          <Text style={styles.h}>{t(language, 'pastGroups')}</Text>
           <FlatList
             data={threads}
             keyExtractor={(t) => t.id}
@@ -280,16 +282,16 @@ export default function GroupScreen() {
                   {item.role === 'assistant' && (
                     <Pressable
                       accessibilityLabel="Save as artifact"
-                      onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert('Saved', 'Saved to Artifacts.'); }}
+                      onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert(t(language, 'saved'), t(language, 'savedToArtifacts')); }}
                     >
-                      <Text style={styles.saveArtifact}>Save as artifact</Text>
+                      <Text style={styles.saveArtifact}>{t(language, 'saveAsArtifact')}</Text>
                     </Pressable>
                   )}
                 </View>
               );
             }}
           />}
-          {loading && <LoadingRow label={workingBot ? `${workingBot} is replying…` : 'Group is working…'} />}
+          {loading && <LoadingRow label={workingBot ? `${workingBot} ${t(language, 'isReplying')}` : t(language, 'groupWorking')} />}
           {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
           {failedCode !== null && failedText ? (
             <View style={styles.failedRow}>
@@ -318,7 +320,7 @@ export default function GroupScreen() {
           <ComposerBar
             input={input}
             onChangeText={setInput}
-            placeholder="Message the whole group…"
+            placeholder={t(language, 'messageGroup')}
             loading={loading}
             onSend={() => { void send(); }}
             onAttachment={(att) => { void handleAttachment(att); }}

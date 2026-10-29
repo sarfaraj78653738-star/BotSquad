@@ -6,7 +6,8 @@ import { useCallback } from 'react';
 import { Button, Card, Field } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { createProject, deleteProject, listProjectChats, listProjects, Project, ProjectChatLink } from '../src/lib/projects';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Projects — local only, starts empty. Create (name + optional
 // description), list, delete. Opening a project shows its name and
@@ -14,6 +15,7 @@ import { useTokens } from '../src/lib/tokens';
 // chats are invented, because none exist yet.
 export default function ProjectsScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -32,16 +34,16 @@ export default function ProjectsScreen() {
 
   async function create() {
     const trimmed = name.trim();
-    if (!trimmed) { setMsg('Enter a project name.'); return; }
+    if (!trimmed) { setMsg(t(language, 'enterProjectName')); return; }
     await createProject(trimmed, description.trim());
-    setName(''); setDescription(''); setMsg('Project created.');
+    setName(''); setDescription(''); setMsg(t(language, 'projectCreated'));
     await refresh();
   }
 
   function confirmDelete(p: Project) {
-    Alert.alert('Delete this project?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => { await deleteProject(p.id); if (selected?.id === p.id) setSelected(null); await refresh(); } },
+    Alert.alert(t(language, 'deleteProjectTitle'), t(language, 'cannotUndo'), [
+      { text: t(language, 'cancel'), style: 'cancel' },
+      { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteProject(p.id); if (selected?.id === p.id) setSelected(null); await refresh(); } },
     ]);
   }
 
@@ -51,16 +53,16 @@ export default function ProjectsScreen() {
         <View style={styles.header}>
           <Pressable accessibilityLabel="Back to projects" onPress={() => setSelected(null)} style={styles.backRow}>
             <Feather name="chevron-left" size={22} color={tokens.text} />
-            <Text style={styles.backText}>Projects</Text>
+            <Text style={styles.backText}>{t(language, 'projects')}</Text>
           </Pressable>
           <Text style={styles.headerTitle}>{selected.name}</Text>
           <View style={{ width: 84 }} />
         </View>
         <ScrollView style={styles.body}>
           {selected.description ? <Text style={styles.bodyText}>{selected.description}</Text> : null}
-          <Text style={styles.sub}>Linked chats — added from a chat's menu (Add to project).</Text>
+          <Text style={styles.sub}>{t(language, 'linkedChats')}</Text>
           {linked.length === 0 ? (
-            <Text style={styles.sub}>No chats linked yet.</Text>
+            <Text style={styles.sub}>{t(language, 'noChatsLinked')}</Text>
           ) : linked.map((l) => (
             <Card key={`${l.kind}-${l.chatId}`}>
               <Pressable onPress={() => {
@@ -69,11 +71,11 @@ export default function ProjectsScreen() {
                 else router.push({ pathname: '/group', params: { threadId: l.chatId } } as never);
               }}>
                 <Text style={styles.name}>{l.title}</Text>
-                <Text style={styles.sub}>{l.kind === 'main' ? 'Main Chat' : l.kind === 'bot' ? 'Bot chat' : 'Group chat'}</Text>
+                <Text style={styles.sub}>{l.kind === 'main' ? t(language, 'mainChat') : l.kind === 'bot' ? t(language, 'botChatKind') : t(language, 'groupChatKind')}</Text>
               </Pressable>
             </Card>
           ))}
-          <Button title="Delete project" variant="danger" onPress={() => confirmDelete(selected)} />
+          <Button title={t(language, 'deleteProject')} variant="danger" onPress={() => confirmDelete(selected)} />
         </ScrollView>
       </View>
     );
@@ -83,18 +85,18 @@ export default function ProjectsScreen() {
     <View style={styles.wrap}>
       <View style={styles.header}>
         <MenuButton />
-        <Text style={styles.headerTitle}>Projects</Text>
+        <Text style={styles.headerTitle}>{t(language, 'projects')}</Text>
         <View style={{ width: 34 }} />
       </View>
       <ScrollView style={styles.body}>
         <Card>
-          <Field label="Project name" onChangeText={setName} value={name} />
-          <Field label="Description (optional)" multiline onChangeText={setDescription} value={description} />
-          <Button title="Create project" onPress={create} />
+          <Field label={t(language, 'projectName')} onChangeText={setName} value={name} />
+          <Field label={t(language, 'descriptionOptional')} multiline onChangeText={setDescription} value={description} />
+          <Button title={t(language, 'createProject')} onPress={create} />
         </Card>
         {msg ? <Text style={styles.sub}>{msg}</Text> : null}
         {projects.length === 0 ? (
-          <Text style={styles.sub}>No projects yet.</Text>
+          <Text style={styles.sub}>{t(language, 'noProjectsYet')}</Text>
         ) : projects.map((p) => (
           <Card key={p.id}>
             <Pressable onPress={() => setSelected(p)}>
@@ -102,7 +104,7 @@ export default function ProjectsScreen() {
               {p.description ? <Text style={styles.sub}>{p.description}</Text> : null}
             </Pressable>
             <Pressable accessibilityLabel={`Delete project ${p.name}`} onPress={() => confirmDelete(p)}>
-              <Text style={styles.delete}>Delete</Text>
+              <Text style={styles.delete}>{t(language, 'delete')}</Text>
             </Pressable>
           </Card>
         ))}

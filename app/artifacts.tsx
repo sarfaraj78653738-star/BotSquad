@@ -4,13 +4,15 @@ import { useFocusEffect } from 'expo-router';
 import { Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { Artifact, deleteArtifact, listArtifacts } from '../src/lib/projects';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Artifacts — local only, empty by default. This list only ever shows
 // items the user explicitly saved from an assistant reply with
 // "Save as artifact". No prefilled items, no sample data.
 export default function ArtifactsScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const [items, setItems] = useState<Artifact[]>([]);
 
@@ -18,9 +20,9 @@ export default function ArtifactsScreen() {
   useFocusEffect(useCallback(() => { refresh().catch(() => {}); }, [refresh]));
 
   function confirmDelete(a: Artifact) {
-    Alert.alert('Delete this artifact?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => { await deleteArtifact(a.id); await refresh(); } },
+    Alert.alert(t(language, 'deleteArtifactTitle'), t(language, 'cannotUndo'), [
+      { text: t(language, 'cancel'), style: 'cancel' },
+      { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteArtifact(a.id); await refresh(); } },
     ]);
   }
 
@@ -28,18 +30,18 @@ export default function ArtifactsScreen() {
     <View style={styles.wrap}>
       <View style={styles.header}>
         <MenuButton />
-        <Text style={styles.headerTitle}>Artifacts</Text>
+        <Text style={styles.headerTitle}>{t(language, 'artifacts')}</Text>
         <View style={{ width: 34 }} />
       </View>
       <ScrollView style={styles.body}>
         {items.length === 0 ? (
-          <Text style={styles.sub}>No artifacts yet.</Text>
+          <Text style={styles.sub}>{t(language, 'noArtifactsYet')}</Text>
         ) : items.map((a) => (
           <Card key={a.id}>
             <Text style={styles.title}>{a.title}</Text>
             <Text style={styles.bodyText} numberOfLines={6}>{a.body}</Text>
             <Pressable accessibilityLabel={`Delete artifact ${a.title}`} onPress={() => confirmDelete(a)}>
-              <Text style={styles.delete}>Delete</Text>
+              <Text style={styles.delete}>{t(language, 'delete')}</Text>
             </Pressable>
           </Card>
         ))}

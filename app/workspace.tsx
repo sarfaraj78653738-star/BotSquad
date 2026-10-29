@@ -5,7 +5,8 @@ import { useFocusEffect } from 'expo-router';
 import { Button, Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { deleteWorkspaceFile, exportWorkspaceZip, listWorkspaceFiles, readWorkspaceFile, workspaceFileUri, WorkspaceFile } from '../src/lib/workspace';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Workspace: the agent's files on this phone. Main Chat (agent mode)
 // saves code, pages, and notes here; this screen lists them, previews
@@ -15,6 +16,7 @@ import { useTokens } from '../src/lib/tokens';
 // run on the phone — export the ZIP and run it on a computer/server.
 export default function WorkspaceScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [preview, setPreview] = useState<{ path: string; uri?: string; text?: string } | null>(null);
@@ -27,7 +29,7 @@ export default function WorkspaceScreen() {
       setPreview({ path: f.path, uri: await workspaceFileUri(f.path) });
     } else {
       try { setPreview({ path: f.path, text: await readWorkspaceFile(f.path) }); }
-      catch { Alert.alert('Could not open', 'That file could not be read as text.'); }
+      catch { Alert.alert(t(language, 'couldNotOpen'), t(language, 'couldNotRead')); }
     }
   }
 
@@ -38,7 +40,7 @@ export default function WorkspaceScreen() {
           <MenuButton />
           <Text style={styles.headerTitle} numberOfLines={1}>{preview.path}</Text>
           <Pressable accessibilityLabel="Back to workspace" onPress={() => setPreview(null)} style={styles.backButton}>
-            <Text style={styles.backText}>Files</Text>
+            <Text style={styles.backText}>{t(language, 'filesBack')}</Text>
           </Pressable>
         </View>
         {preview.uri ? (
@@ -56,12 +58,12 @@ export default function WorkspaceScreen() {
     <View style={styles.wrap}>
       <View style={styles.header}>
         <MenuButton />
-        <Text style={styles.headerTitle}>Workspace</Text>
+        <Text style={styles.headerTitle}>{t(language, 'workspace')}</Text>
         <View style={{ width: 34 }} />
       </View>
       <View style={styles.body}>
-        <Button title="Export workspace ZIP" onPress={async () => { try { await exportWorkspaceZip(); } catch { Alert.alert('Export failed', 'The ZIP could not be created. Try again.'); } }} />
-        {files.length === 0 && <Card><Text style={styles.sub}>No files yet.</Text></Card>}
+        <Button title={t(language, 'exportWorkspaceZip')} onPress={async () => { try { await exportWorkspaceZip(); } catch { Alert.alert(t(language, 'exportFailed'), t(language, 'zipFailed')); } }} />
+        {files.length === 0 && <Card><Text style={styles.sub}>{t(language, 'noFilesYet')}</Text></Card>}
         <FlatList
           data={files}
           keyExtractor={(f) => f.path}
@@ -69,13 +71,13 @@ export default function WorkspaceScreen() {
             <Card>
               <Pressable onPress={() => { void openFile(item); }}>
                 <Text style={styles.name}>{item.path}</Text>
-                <Text style={styles.sub}>{item.size} bytes</Text>
+                <Text style={styles.sub}>{item.size} {t(language, 'bytes')}</Text>
               </Pressable>
-              <Pressable onPress={() => Alert.alert('Delete this file?', `${item.path} will be removed from the workspace.`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: async () => { await deleteWorkspaceFile(item.path); refresh(); } },
+              <Pressable onPress={() => Alert.alert(t(language, 'deleteFileTitle'), `${item.path} ${t(language, 'willBeRemoved')}`, [
+                { text: t(language, 'cancel'), style: 'cancel' },
+                { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteWorkspaceFile(item.path); refresh(); } },
               ])}>
-                <Text style={[styles.sub, { color: tokens.danger }]}>Delete</Text>
+                <Text style={[styles.sub, { color: tokens.danger }]}>{t(language, 'delete')}</Text>
               </Pressable>
             </Card>
           )}

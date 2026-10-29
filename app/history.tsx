@@ -8,7 +8,8 @@ import { BotAvatar } from '../src/components/BotAvatar';
 import { avatarFor, MAIN_CHAT_AVATAR_DEFAULT } from '../src/lib/avatars';
 import { getUniversalChatId } from '../src/lib/universal';
 import { Bot, Chat, GroupThread } from '../src/lib/types';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 type BotChatRow = { chat: Chat; bot: Bot | null; snippet: string };
 type GroupRow = { thread: GroupThread; snippet: string };
@@ -22,6 +23,7 @@ type GroupRow = { thread: GroupThread; snippet: string };
 type Tab = 'main' | 'bots' | 'group';
 export default function HistoryScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
   const [universalChats, setUniversalChats] = useState<{ id: string; snippet: string; lastAt: string; title: string | null }[]>([]);
@@ -44,7 +46,7 @@ export default function HistoryScreen() {
       for (const chat of chats) {
         const msgs = await listMessages(chat.id).catch(() => []);
         const last = msgs[msgs.length - 1];
-        rows.push({ chat, bot: bots.find((b) => b.id === chat.botId) ?? null, snippet: last ? last.text : 'No messages yet.' });
+        rows.push({ chat, bot: bots.find((b) => b.id === chat.botId) ?? null, snippet: last ? last.text : t(language, 'noMessagesYet') });
       }
       setBotRows(rows);
       const threads = await listGroupThreads();
@@ -52,7 +54,7 @@ export default function HistoryScreen() {
       for (const thread of threads) {
         const msgs = await listGroupMessages(thread.id).catch(() => []);
         const last = msgs[msgs.length - 1];
-        grows.push({ thread, snippet: last ? last.text : 'No messages yet.' });
+        grows.push({ thread, snippet: last ? last.text : t(language, 'noMessagesYet') });
       }
       setGroupRows(grows);
     })().catch(() => {});
@@ -63,27 +65,27 @@ export default function HistoryScreen() {
     <View style={styles.wrap}>
       <View style={styles.header}>
         <MenuButton />
-        <Text style={styles.headerTitle}>History</Text>
+        <Text style={styles.headerTitle}>{t(language, 'history')}</Text>
         <View style={{ width: 34 }} />
       </View>
       <ScrollView style={styles.body}>
         <View style={styles.tabs}>
-          {([['main', 'Main Chat'], ['bots', 'Bots'], ['group', 'Group']] as [Tab, string][]).map(([t, label]) => (
-            <Pressable key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
-              <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{label}</Text>
+          {([['main', 'mainChat'], ['bots', 'bots'], ['group', 'group']] as [Tab, string][]).map(([tabKey, labelKey]) => (
+            <Pressable key={tabKey} onPress={() => setTab(tabKey)} style={[styles.tab, tab === tabKey && styles.tabActive]}>
+              <Text style={[styles.tabText, tab === tabKey && styles.tabTextActive]}>{t(language, labelKey)}</Text>
             </Pressable>
           ))}
         </View>
         {tab === 'main' && (
           <>
-            {universalChats.length === 0 && <Card><Text style={styles.sub}>No Main Chat messages yet.</Text></Card>}
+            {universalChats.length === 0 && <Card><Text style={styles.sub}>{t(language, 'noMainMessages')}</Text></Card>}
             {[...universalChats].sort((a, b) => Number(pinnedIds.includes(b.id)) - Number(pinnedIds.includes(a.id))).map((c) => (
               <Pressable key={c.id} onPress={() => router.push({ pathname: '/', params: { chatId: c.id } } as never)}>
                 <Card>
                   <View style={styles.row}>
                     <BotAvatar variant={avatarFor('main-chat', mainAvatar)} size={40} />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.name}>{c.title ?? 'Main Chat'}{pinnedIds.includes(c.id) ? ' · Pinned' : ''}{c.id === currentUniversalId ? ' · Current' : ''}</Text>
+                      <Text style={styles.name}>{c.title ?? t(language, 'mainChat')}{pinnedIds.includes(c.id) ? t(language, 'pinnedSuffix') : ''}{c.id === currentUniversalId ? t(language, 'currentSuffix') : ''}</Text>
                       <Text style={styles.snippet} numberOfLines={2}>{c.snippet}</Text>
                     </View>
                   </View>
@@ -94,14 +96,14 @@ export default function HistoryScreen() {
         )}
         {tab === 'bots' && (
           <>
-            {botRows.length === 0 && <Card><Text style={styles.sub}>No bot chats yet. Start one from Main Chat.</Text></Card>}
+            {botRows.length === 0 && <Card><Text style={styles.sub}>{t(language, 'noBotChats')}</Text></Card>}
             {botRows.map((r) => (
               <Pressable key={r.chat.id} onPress={() => router.push(`/chat/${r.chat.botId}` as never)}>
                 <Card>
                   <View style={styles.row}>
                     <BotAvatar variant={avatarFor(r.bot?.id, r.bot?.avatar)} size={40} />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.name}>{r.bot?.name ?? 'Bot'}</Text>
+                      <Text style={styles.name}>{r.bot?.name ?? t(language, 'botFallback')}</Text>
                       <Text style={styles.snippet} numberOfLines={2}>{r.snippet}</Text>
                     </View>
                   </View>
@@ -112,7 +114,7 @@ export default function HistoryScreen() {
         )}
         {tab === 'group' && (
           <>
-            {groupRows.length === 0 && <Card><Text style={styles.sub}>No group chats yet. Start one from Group.</Text></Card>}
+            {groupRows.length === 0 && <Card><Text style={styles.sub}>{t(language, 'noGroupChats')}</Text></Card>}
             {groupRows.map((r) => (
               <Pressable key={r.thread.id} onPress={() => router.push({ pathname: '/group', params: { threadId: r.thread.id } } as never)}>
                 <Card>

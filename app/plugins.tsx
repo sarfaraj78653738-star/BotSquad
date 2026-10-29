@@ -21,7 +21,7 @@ export default function PluginsScreen() {
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <Pressable accessibilityLabel="Back to Settings" onPress={() => router.replace('/settings')} style={styles.backRow}>
+        <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
           <Text style={styles.backText}>Settings</Text>
         </Pressable>

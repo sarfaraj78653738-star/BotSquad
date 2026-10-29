@@ -7,10 +7,12 @@ import { avatarFor } from '../src/lib/avatars';
 import { MenuButton } from '../src/components/Drawer';
 import { deleteBot, listBots, saveBot } from '../src/lib/db';
 import { Bot } from '../src/lib/types';
-import { useTokens } from '../src/lib/tokens';
+import { useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 export default function BotsScreen() {
   const tokens = useTokens();
+  const [language] = useLanguage();
   const styles = getStyles(tokens);
   const [bots, setBots] = useState<Bot[]>([]);
   const [search, setSearch] = useState('');
@@ -21,14 +23,14 @@ export default function BotsScreen() {
     <View style={styles.wrap}>
       <View style={styles.header}>
         <MenuButton />
-        <Text style={styles.headerTitle}>Bots</Text>
+        <Text style={styles.headerTitle}>{t(language, 'bots')}</Text>
         <View style={{ width: 34 }} />
       </View>
       <View style={styles.body}>
-        <TextInput accessibilityLabel="Search bots" onChangeText={setSearch} placeholder="Search bots…" placeholderTextColor={tokens.textMuted} style={styles.search} value={search} />
-        <Link href="/bot/new" asChild><Pressable style={styles.new}><Text style={styles.newText}>+ Create a bot</Text></Pressable></Link>
+        <TextInput accessibilityLabel="Search bots" onChangeText={setSearch} placeholder={t(language, 'searchBots')} placeholderTextColor={tokens.textMuted} style={styles.search} value={search} />
+        <Link href="/bot/new" asChild><Pressable style={styles.new}><Text style={styles.newText}>{t(language, 'createBot')}</Text></Pressable></Link>
         {bots.length === 0 && (
-          <Card><Text style={styles.empty}>No bots yet. Create one, give it a task, and it will behave like that task.</Text></Card>
+          <Card><Text style={styles.empty}>{t(language, 'noBotsYet')}</Text></Card>
         )}
         <FlatList
           data={bots}
@@ -42,7 +44,7 @@ export default function BotsScreen() {
                     <View style={{ flex: 1 }}>
                       <View style={styles.nameRow}>
                         <Text style={styles.name}>{item.name}</Text>
-                        {item.isPinned ? <Chip label="Pinned" /> : null}
+                        {item.isPinned ? <Chip label={t(language, 'pinned')} /> : null}
                       </View>
                       <Text style={styles.role}>{item.role}</Text>
                       <Text style={styles.task} numberOfLines={2}>{item.task}</Text>
@@ -51,14 +53,14 @@ export default function BotsScreen() {
                 </Pressable>
               </Link>
               <View style={styles.actions}>
-                <Link href={`/bot/${item.id}`} asChild><Pressable><Text style={styles.link}>Edit / Memory</Text></Pressable></Link>
-                <Pressable onPress={async () => { await saveBot({ ...item, isPinned: item.isPinned ? 0 : 1, updatedAt: new Date().toISOString() }); refresh(); }}><Text style={styles.link}>{item.isPinned ? 'Unpin' : 'Pin'}</Text></Pressable>
-                <Pressable onPress={async () => { await deleteBot(item.id); refresh(); }}><Text style={[styles.link, { color: tokens.danger }]}>Delete</Text></Pressable>
+                <Link href={`/bot/${item.id}`} asChild><Pressable><Text style={styles.link}>{t(language, 'editMemory')}</Text></Pressable></Link>
+                <Pressable onPress={async () => { await saveBot({ ...item, isPinned: item.isPinned ? 0 : 1, updatedAt: new Date().toISOString() }); refresh(); }}><Text style={styles.link}>{item.isPinned ? t(language, 'unpin') : t(language, 'pin')}</Text></Pressable>
+                <Pressable onPress={async () => { await deleteBot(item.id); refresh(); }}><Text style={[styles.link, { color: tokens.danger }]}>{t(language, 'delete')}</Text></Pressable>
               </View>
             </Card>
           )}
         />
-        <Text style={styles.note}>Bots send nothing externally.</Text>
+        <Text style={styles.note}>{t(language, 'botsNote')}</Text>
       </View>
     </View>
   );
