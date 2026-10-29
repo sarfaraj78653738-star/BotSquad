@@ -6,7 +6,7 @@ import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotConnectionIds, listBotSkillIds, listBots, listConnections, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
+import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotConnectionIds, listBots, listConnections, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
 import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
@@ -16,6 +16,7 @@ import { linkChatToProject } from '../lib/projects';
 import { addChatToHome, shortcutUri } from '../lib/shortcut';
 import { AGENT_TOOLS_PROMPT, executeAgentTool, parseToolCalls, stripToolBlocks } from '../lib/agent';
 import { buildCrossChatDigest } from '../lib/crossChat';
+import { parseSkillCallout } from '../lib/skillCallout';
 import { ThreadMenu } from './ThreadMenu';
 import { chatWithBot } from '../lib/providers';
 import { errorCode, isRawErrorText } from '../lib/errors';
@@ -245,8 +246,12 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     try {
       const memory = await listMemory(bot.id);
       const others = (await listBots()).map((b) => b.name);
-      const enabledIds = await listBotSkillIds(bot.id);
-      const enabledSkills = (await listSkills()).filter((s) => enabledIds.includes(s.id));
+      // Skills are called out, not pre-enabled (user order 2026-10-29):
+      // "/skill-name ..." or "Skill Name, ..." at the start of the
+      // message applies that saved skill for this turn only.
+      const callout = parseSkillCallout(text.trim(), await listSkills());
+      const enabledSkills = callout.skill ? [{ name: callout.skill.name, template: callout.skill.template }] : [];
+      const effectiveText = callout.skill ? callout.cleanText : text.trim();
       const profilePrefs = (await getSetting('profile_preferences')) ?? '';
       const connIds = universal ? [] : await listBotConnectionIds(bot.id);
       const enabledConns = connIds.length
@@ -266,7 +271,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         const digest = await buildCrossChatDigest(chatId).catch(() => '');
         if (digest) systemFull += `\n\n[OTHER CHATS CONTEXT — recent messages from this phone's other threads, so questions about them can be answered. Never reveal a thread's contents unless the user asks about that thread.]\n${digest}`;
         systemFull += AGENT_TOOLS_PROMPT;
-        let reply = await chatWithBot(bot, systemFull, history, text.trim());
+        let reply = await chatWithBot(bot, systemFull, history, effectiveText);
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
@@ -291,7 +296,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         // without the user approving that exact action.
         for (const action of parseBrowserCommands(finalReply)) browserRef.current?.requestAction(action);
       } else {
-        const reply = await chatWithBot(bot, system, history, text.trim());
+        const reply = await chatWithBot(bot, system, history, effectiveText);
         // Bot browser commands in the reply drive the panel. Tap/type
         // actions stop at the panel's approval card; they never run
         // without the user approving that exact action.

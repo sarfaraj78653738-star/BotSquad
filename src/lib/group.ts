@@ -1,7 +1,8 @@
-import { addGroupMessage, getSetting, listBotConnectionIds, listBotSkillIds, listBots, listConnections, listGroupMessages, listMemory, listSkills } from './db';
+import { addGroupMessage, getSetting, listBotConnectionIds, listBots, listConnections, listGroupMessages, listMemory, listSkills } from './db';
 import { buildSystemPrompt } from './prompt';
 import { chatWithBot } from './providers';
 import { errorCode } from './errors';
+import { parseSkillCallout } from './skillCallout';
 import { Bot, GroupMessage, newId, nowIso } from './types';
 
 // Group chat runner: each selected bot replies IN TURN, in the order the
@@ -27,6 +28,10 @@ export async function runGroupMessage(
 
   const allBots = await listBots();
   const otherNames = allBots.map((b) => b.name);
+  // Skill callout, same model as single chats: a skill named at the
+  // start of the message applies to every bot for this turn only.
+  const callout = parseSkillCallout(userText.trim(), await listSkills());
+  const effectiveText = callout.skill ? callout.cleanText : userText.trim();
   const prior = await listGroupMessages(threadId);
   // History for each bot: last 10 turns, assistant turns labelled by bot so
   // a bot does not mistake another bot's reply for its own.
@@ -43,12 +48,11 @@ export async function runGroupMessage(
     onBotWorking?.(bot.name);
     try {
       const memory = await listMemory(bot.id);
-      const enabledIds = await listBotSkillIds(bot.id);
-      const enabledSkills = (await listSkills()).filter((s) => enabledIds.includes(s.id));
+      const enabledSkills = callout.skill ? [{ name: callout.skill.name, template: callout.skill.template }] : [];
       const connIds = await listBotConnectionIds(bot.id).catch(() => [] as string[]);
       const enabledConns = allConns.filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }));
       const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, enabledConns);
-      const reply = await chatWithBot(bot, system, history, userText.trim());
+      const reply = await chatWithBot(bot, system, history, effectiveText);
       // A reply is delivered content, not a draft (same as Main/Bot
       // chats): no approval gate, no "(draft)" label.
       const msg: GroupMessage = { id: newId(), threadId, botId: bot.id, role: 'assistant', text: reply, approvalState: null, createdAt: nowIso() };
