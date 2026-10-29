@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../../src/components/ui';
+import { AvatarPicker } from '../../src/components/AvatarPicker';
+import { AVATAR_VARIANTS } from '../../src/lib/avatars';
 import { deleteMemory, getBot, listMemory, saveBot } from '../../src/lib/db';
 import { AVATAR_COLORS, AVATAR_ICONS } from '../../src/lib/tokens';
 import { Bot, MemoryNote, newId, nowIso } from '../../src/lib/types';
@@ -15,7 +17,7 @@ export default function BotEditScreen() {
   const router = useRouter();
   const isNew = id === 'new';
   const [bot, setBot] = useState<Bot>({
-    id: newId(), name: '', role: '', avatarColor: AVATAR_COLORS[0] ?? '#E7DCC8', avatarIcon: AVATAR_ICONS[0] ?? '◆',
+    id: newId(), name: '', role: '', avatarColor: AVATAR_COLORS[0] ?? '#E7DCC8', avatarIcon: AVATAR_ICONS[0] ?? '◆', avatar: AVATAR_VARIANTS[0]?.id,
     task: '', personality: '', instructions: '', boundaries: 'Never send, publish, buy, or delete anything externally. Drafts need user approval.',
     provider: 'openai-compatible', model: 'gpt-4o-mini', isPinned: 0, createdAt: nowIso(), updatedAt: nowIso(),
   });
@@ -49,6 +51,8 @@ export default function BotEditScreen() {
       </View>
     <ScrollView style={styles.body}>
       <Text style={styles.sub}>One task = its personality.</Text>
+      <Text style={styles.title}>Avatar — pick one for this bot</Text>
+      <AvatarPicker value={bot.avatar} onChange={(id) => setBot({ ...bot, avatar: id })} />
       <Field label="Name" onChangeText={(v) => setBot({ ...bot, name: v })} value={bot.name} />
       <Field label="Role" onChangeText={(v) => setBot({ ...bot, role: v })} value={bot.role} />
       <Field label="Task (what it owns)" multiline onChangeText={(v) => setBot({ ...bot, task: v })} value={bot.task} />

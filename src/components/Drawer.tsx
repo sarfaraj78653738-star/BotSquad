@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
+import { newId } from '../lib/types';
 import { useTokens } from '../lib/tokens';
 
 // The app's only navigation control: a slide-over drawer opened from the
@@ -86,7 +87,7 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
     <View style={styles.overlay}>
       <View style={[styles.panel, { paddingTop: insets.top + tokens.space.md }]}>
         <View style={styles.panelHead}>
-          <Text style={styles.panelTitle}>TeamBots</Text>
+          <Text style={styles.panelTitle}>BotSquad</Text>
           <Pressable accessibilityLabel="Close menu" onPress={onClose} style={styles.closeButton}>
             <Feather name="x" size={20} color={tokens.text} />
           </Pressable>
@@ -98,6 +99,15 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
         {WORK_ITEMS.map(renderItem)}
         <View style={styles.divider} />
         <View style={{ flex: 1 }} />
+        <Pressable
+          accessibilityLabel="Start a new chat"
+          accessibilityRole="button"
+          onPress={() => { onClose(); router.push({ pathname: '/', params: { chatId: `universal-${newId()}` } } as never); }}
+          style={styles.newChatButton}
+        >
+          <Feather name="plus" size={18} color={tokens.onAccent} />
+          <Text style={styles.newChatText}>New chat</Text>
+        </Pressable>
         {renderItem(SETTINGS_ITEM)}
       </View>
       <Pressable accessibilityLabel="Close menu" style={styles.backdrop} onPress={onClose} />
@@ -114,6 +124,8 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   itemText: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '600' },
   itemTextActive: { color: tokens.text, fontWeight: '700' },
   menuButton: { padding: 6 },
+  newChatButton: { alignItems: 'center', backgroundColor: tokens.accent, borderRadius: tokens.radius.md, flexDirection: 'row', gap: 8, justifyContent: 'center', marginBottom: 8, paddingVertical: 13 },
+  newChatText: { color: tokens.onAccent, fontSize: tokens.font.md, fontWeight: '700' },
   overlay: { bottom: 0, flexDirection: 'row', left: 0, position: 'absolute', right: 0, top: 0, zIndex: 100 },
   panel: { backgroundColor: tokens.bg, borderRightColor: tokens.border, borderRightWidth: 1, paddingBottom: tokens.space.md, paddingHorizontal: tokens.space.md, width: 300 },
   panelHead: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: tokens.space.md },

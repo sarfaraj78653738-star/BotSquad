@@ -51,7 +51,9 @@ export function ModelPicker() {
     apply: () => setUniversal({ provider: s.provider, model: s.model, endpoint: s.endpoint, contextWindow: s.contextWindow }),
   }));
   const models = [
-    { key: `current|${model}`, id: model, provider, description: 'Current model.', apply: () => setUniversal({ model }) },
+    // No current row while no model is set: the sheet then lists
+    // only saved models, never an empty or factory row.
+    ...(model ? [{ key: `current|${model}`, id: model, provider, description: 'Current model.', apply: () => setUniversal({ model }) }] : []),
     ...savedEntries,
   ].filter((m, i, arr) => arr.findIndex((x) => x.key === m.key) === i);
 
@@ -63,7 +65,7 @@ export function ModelPicker() {
         onPress={async () => { if (!open) await refresh(); setOpen(true); }}
         style={styles.button}
       >
-        <Text style={styles.buttonText} numberOfLines={1}>{model}</Text>
+        <Text style={styles.buttonText} numberOfLines={1}>{model || 'Select model'}</Text>
         <Feather name="chevron-down" size={16} color={tokens.text} />
       </Pressable>
       <Modal animationType="slide" onRequestClose={() => setOpen(false)} transparent visible={open}>
@@ -86,8 +88,15 @@ export function ModelPicker() {
                 // switching in this sheet overwrote the only copy of
                 // the previous model and it could only be retyped.
                 // Tapping the already-current row just re-saves it.
+                // Exception: the old factory default (openai-compatible
+                // + gpt-4o-mini + blank endpoint) is never auto-saved —
+                // the user ordered no model of the app's own, so that
+                // placeholder must not come back as a "Saved model".
                 const current = await getUniversal();
-                await saveModelSetup({ provider: current.provider, model: current.model, endpoint: current.endpoint, contextWindow: current.contextWindow });
+                const isFactoryDefault = current.provider === 'openai-compatible' && current.model === 'gpt-4o-mini' && !current.endpoint.trim();
+                if (!isFactoryDefault) {
+                  await saveModelSetup({ provider: current.provider, model: current.model, endpoint: current.endpoint, contextWindow: current.contextWindow });
+                }
                 await m.apply(); setModel(m.id); setProvider(m.provider); setOpen(false);
               }}
               style={styles.row}

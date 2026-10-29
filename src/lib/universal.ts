@@ -19,7 +19,10 @@ export async function getUniversal(): Promise<UniversalConfig> {
   const provider = (PROVIDERS as readonly string[]).includes(providerRaw ?? '')
     ? (providerRaw as UniversalConfig['provider'])
     : 'openai-compatible';
-  const model = (await getSetting('universal_model'))?.trim() || 'gpt-4o-mini';
+  // No factory model: the app ships with NO model of its own (user
+  // order 2026-10-29). A fresh install shows an empty model until the
+  // user saves one in Settings; the picker lists only saved models.
+  const model = (await getSetting('universal_model'))?.trim() || '';
   const endpoint = (await getSetting('universal_endpoint')) ?? '';
   const windowRaw = await getSetting('universal_context_window');
   const parsed = windowRaw === null ? NaN : parseInt(windowRaw, 10);

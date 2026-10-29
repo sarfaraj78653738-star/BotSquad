@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["ChatShortcutModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.chatshortcut.ChatShortcutModule"]
+  }
+}

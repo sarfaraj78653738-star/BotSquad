@@ -1,7 +1,9 @@
 import { Link, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Avatar, Card, Chip } from '../src/components/ui';
+import { Card, Chip } from '../src/components/ui';
+import { BotAvatar } from '../src/components/BotAvatar';
+import { avatarFor } from '../src/lib/avatars';
 import { MenuButton } from '../src/components/Drawer';
 import { deleteBot, listBots, saveBot } from '../src/lib/db';
 import { Bot } from '../src/lib/types';
@@ -36,7 +38,7 @@ export default function BotsScreen() {
               <Link href={`/chat/${item.id}`} asChild>
                 <Pressable>
                   <View style={styles.row}>
-                    <Avatar color={item.avatarColor} label={item.name} />
+                    <BotAvatar variant={avatarFor(item.id, item.avatar)} size={44} />
                     <View style={{ flex: 1 }}>
                       <View style={styles.nameRow}>
                         <Text style={styles.name}>{item.name}</Text>

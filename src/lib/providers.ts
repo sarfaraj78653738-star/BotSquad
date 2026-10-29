@@ -100,7 +100,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
 // fails or looks like a login wall, the caller shows that plainly.
 export async function fetchPublicPageText(url: string): Promise<{ title: string; text: string; url: string }> {
   if (!/^https?:\/\//i.test(url)) throw new ProviderError('BAD_URL', 'Only http(s) URLs can be browsed.');
-  const res = await fetch(url, { headers: { 'User-Agent': 'TeamBots/0.1 (public page reader)' } });
+  const res = await fetch(url, { headers: { 'User-Agent': 'BotSquad/0.1 (public page reader)' } });
   if (res.status === 401 || res.status === 403) throw new ProviderError('LOGIN_REQUIRED', 'This page needs a login or blocks automated reading. Open it yourself in the in-chat browser instead — the Bot will not sign in for you.');
   if (!res.ok) throw new ProviderError('PAGE_ERROR', `Could not load that page (HTTP ${res.status}).`);
   const html = await res.text();

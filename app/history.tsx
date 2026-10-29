@@ -1,9 +1,11 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Avatar, Card } from '../src/components/ui';
+import { Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
-import { listBots, listChats, listGroupMessages, listGroupThreads, listMessages, listUniversalChats } from '../src/lib/db';
+import { listBots, listChats, listGroupMessages, listGroupThreads, listMessages, listUniversalChats, getPinnedThreads, getSetting } from '../src/lib/db';
+import { BotAvatar } from '../src/components/BotAvatar';
+import { avatarFor, MAIN_CHAT_AVATAR_DEFAULT } from '../src/lib/avatars';
 import { getUniversalChatId } from '../src/lib/universal';
 import { Bot, Chat, GroupThread } from '../src/lib/types';
 import { useTokens } from '../src/lib/tokens';
@@ -22,7 +24,9 @@ export default function HistoryScreen() {
   const tokens = useTokens();
   const styles = getStyles(tokens);
   const router = useRouter();
-  const [universalChats, setUniversalChats] = useState<{ id: string; snippet: string; lastAt: string }[]>([]);
+  const [universalChats, setUniversalChats] = useState<{ id: string; snippet: string; lastAt: string; title: string | null }[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [mainAvatar, setMainAvatar] = useState(MAIN_CHAT_AVATAR_DEFAULT);
   const [currentUniversalId, setCurrentUniversalId] = useState('');
   const [botRows, setBotRows] = useState<BotChatRow[]>([]);
   const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
@@ -32,6 +36,8 @@ export default function HistoryScreen() {
     (async () => {
       const bots = await listBots();
       setUniversalChats(await listUniversalChats().catch(() => []));
+      setPinnedIds(await getPinnedThreads().catch(() => []));
+      getSetting('main_chat_avatar').then((v) => { if (v) setMainAvatar(v); }).catch(() => {});
       setCurrentUniversalId(await getUniversalChatId().catch(() => ''));
       const chats = await listChats();
       const rows: BotChatRow[] = [];
@@ -71,13 +77,13 @@ export default function HistoryScreen() {
         {tab === 'main' && (
           <>
             {universalChats.length === 0 && <Card><Text style={styles.sub}>No Main Chat messages yet.</Text></Card>}
-            {universalChats.map((c) => (
+            {[...universalChats].sort((a, b) => Number(pinnedIds.includes(b.id)) - Number(pinnedIds.includes(a.id))).map((c) => (
               <Pressable key={c.id} onPress={() => router.push({ pathname: '/', params: { chatId: c.id } } as never)}>
                 <Card>
                   <View style={styles.row}>
-                    <Avatar color="#E7DCC8" label="Main Chat" size={40} />
+                    <BotAvatar variant={avatarFor('main-chat', mainAvatar)} size={40} />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.name}>Main Chat{c.id === currentUniversalId ? ' · Current' : ''}</Text>
+                      <Text style={styles.name}>{c.title ?? 'Main Chat'}{pinnedIds.includes(c.id) ? ' · Pinned' : ''}{c.id === currentUniversalId ? ' · Current' : ''}</Text>
                       <Text style={styles.snippet} numberOfLines={2}>{c.snippet}</Text>
                     </View>
                   </View>
@@ -93,7 +99,7 @@ export default function HistoryScreen() {
               <Pressable key={r.chat.id} onPress={() => router.push(`/chat/${r.chat.botId}` as never)}>
                 <Card>
                   <View style={styles.row}>
-                    <Avatar color={r.bot?.avatarColor ?? '#E7DCC8'} label={r.bot?.name ?? 'Bot'} size={40} />
+                    <BotAvatar variant={avatarFor(r.bot?.id, r.bot?.avatar)} size={40} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.name}>{r.bot?.name ?? 'Bot'}</Text>
                       <Text style={styles.snippet} numberOfLines={2}>{r.snippet}</Text>

@@ -33,6 +33,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   // add source / repo_url / permissions columns if they are not there yet.
   for (const sql of [
     'ALTER TABLE bots ADD COLUMN endpoint TEXT',
+    'ALTER TABLE bots ADD COLUMN avatar TEXT',
     'ALTER TABLE skills ADD COLUMN source TEXT NOT NULL DEFAULT \'local\'',
     'ALTER TABLE skills ADD COLUMN repo_url TEXT',
     'ALTER TABLE skills ADD COLUMN permissions TEXT NOT NULL DEFAULT \'\'',
@@ -44,7 +45,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
 function botRow(r: any): Bot {
   return {
-    id: r.id, name: r.name, role: r.role, avatarColor: r.avatar_color, avatarIcon: r.avatar_icon,
+    id: r.id, name: r.name, role: r.role, avatarColor: r.avatar_color, avatarIcon: r.avatar_icon, avatar: r.avatar ?? undefined,
     task: r.task, personality: r.personality, instructions: r.instructions, boundaries: r.boundaries,
     provider: r.provider, model: r.model, endpoint: r.endpoint ?? undefined, isPinned: r.is_pinned, createdAt: r.created_at, updatedAt: r.updated_at,
   };
@@ -67,8 +68,8 @@ export async function getBot(id: string): Promise<Bot | null> {
 export async function saveBot(bot: Bot): Promise<void> {
   const d = await getDb();
   await d.runAsync(
-    'INSERT OR REPLACE INTO bots (id, name, role, avatar_color, avatar_icon, task, personality, instructions, boundaries, provider, model, endpoint, is_pinned, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    [bot.id, bot.name, bot.role, bot.avatarColor, bot.avatarIcon, bot.task, bot.personality, bot.instructions, bot.boundaries, bot.provider, bot.model, bot.endpoint ?? null, bot.isPinned, bot.createdAt, bot.updatedAt],
+    'INSERT OR REPLACE INTO bots (id, name, role, avatar_color, avatar_icon, avatar, task, personality, instructions, boundaries, provider, model, endpoint, is_pinned, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    [bot.id, bot.name, bot.role, bot.avatarColor, bot.avatarIcon, bot.avatar ?? null, bot.task, bot.personality, bot.instructions, bot.boundaries, bot.provider, bot.model, bot.endpoint ?? null, bot.isPinned, bot.createdAt, bot.updatedAt],
   );
 }
 
@@ -116,16 +117,17 @@ export async function listMessages(chatId: string): Promise<Message[]> {
 // plus every 'universal-<id>' thread a New chat created. A thread with
 // no messages cannot exist (New chat does nothing on an empty thread),
 // so every row here has a last message to show as its snippet.
-export async function listUniversalChats(): Promise<{ id: string; snippet: string; lastAt: string }[]> {
+export async function listUniversalChats(): Promise<{ id: string; snippet: string; lastAt: string; title: string | null }[]> {
   const d = await getDb();
   const rows = await d.getAllAsync(
     "SELECT chat_id AS id, MAX(created_at) AS last_at FROM messages WHERE chat_id LIKE 'universal-%' GROUP BY chat_id ORDER BY last_at DESC",
   ) as any[];
-  const out: { id: string; snippet: string; lastAt: string }[] = [];
+  const out: { id: string; snippet: string; lastAt: string; title: string | null }[] = [];
   for (const r of rows) {
     const msgs = await listMessages(r.id);
     const last = msgs[msgs.length - 1];
-    out.push({ id: r.id, snippet: last ? last.text : 'No messages yet.', lastAt: r.last_at });
+    const title = await getUniversalTitle(r.id).catch(() => null);
+    out.push({ id: r.id, snippet: last ? last.text : 'No messages yet.', lastAt: r.last_at, title: title?.trim() ? title : null });
   }
   return out;
 }
@@ -144,6 +146,58 @@ export async function setMessageApproval(id: string, state: 'approved' | 'reject
 export async function archiveChat(id: string): Promise<void> {
   const d = await getDb();
   await d.runAsync("UPDATE chats SET status = 'archived' WHERE id = ?", [id]);
+}
+
+// ---- Thread menu helpers (History / header menu, 2026-10-29) ----
+// Main Chat threads have no chats-table row (their messages live under
+// 'universal-*' ids), so their titles live in settings and their
+// pinned state in one JSON list shared by all thread kinds. Bot chats
+// rename their chats row; group threads rename their own row. Delete
+// removes the thread's messages (and its row, where one exists) and
+// never touches any other thread.
+export async function getUniversalTitle(id: string): Promise<string | null> {
+  return getSetting(`universal_title_${id}`);
+}
+
+export async function setUniversalTitle(id: string, title: string): Promise<void> {
+  await setSetting(`universal_title_${id}`, title);
+}
+
+export async function getPinnedThreads(): Promise<string[]> {
+  try {
+    const raw = await getSetting('pinned_threads');
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch { return []; }
+}
+
+export async function togglePinThread(id: string): Promise<boolean> {
+  const pinned = await getPinnedThreads();
+  const next = pinned.includes(id) ? pinned.filter((x) => x !== id) : [...pinned, id];
+  await setSetting('pinned_threads', JSON.stringify(next));
+  return next.includes(id);
+}
+
+export async function deleteUniversalThread(id: string): Promise<void> {
+  const d = await getDb();
+  await d.runAsync('DELETE FROM messages WHERE chat_id = ?', [id]);
+  await setSetting(`universal_title_${id}`, '');
+}
+
+export async function renameChat(id: string, title: string): Promise<void> {
+  const d = await getDb();
+  await d.runAsync('UPDATE chats SET title = ? WHERE id = ?', [title, id]);
+}
+
+export async function deleteChat(id: string): Promise<void> {
+  const d = await getDb();
+  await d.runAsync('DELETE FROM messages WHERE chat_id = ?', [id]);
+  await d.runAsync('DELETE FROM chats WHERE id = ?', [id]);
+}
+
+export async function renameGroupThread(id: string, title: string): Promise<void> {
+  const d = await getDb();
+  await d.runAsync('UPDATE group_threads SET title = ? WHERE id = ?', [title, id]);
 }
 
 export async function listSkills(botId?: string): Promise<Skill[]> {

@@ -5,6 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Button, Card, Field } from '../src/components/ui';
+import { AvatarPicker } from '../src/components/AvatarPicker';
+import { MAIN_CHAT_AVATAR_DEFAULT } from '../src/lib/avatars';
+import { getSetting, setSetting } from '../src/lib/db';
 import { MenuButton } from '../src/components/Drawer';
 import { getApiKey, setApiKey } from '../src/lib/keys';
 import { getUniversal, setUniversal, UniversalConfig } from '../src/lib/universal';
@@ -12,9 +15,9 @@ import { deleteModelSetup, listModelSetups, saveModelSetup, ModelSetup } from '.
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
 import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../src/lib/tokens';
 
-const PRIVACY = `TeamBots Privacy — GitHub v1 (to be reviewed before any store release):
+const PRIVACY = `BotSquad Privacy — GitHub v1 (to be reviewed before any store release):
 • Chats, bots, skills, routines, and memory notes stay on your device in local storage.
-• Your API keys are stored only in the device secure store (Android Keystore). They are sent only to the provider you chose, in a direct call from your device. They are never sent to TeamBots or to any other server.
+• Your API keys are stored only in the device secure store (Android Keystore). They are sent only to the provider you chose, in a direct call from your device. They are never sent to BotSquad or to any other server.
 • This GitHub version has NO ads, NO payments, and NO login. The only third parties are the model provider you chose, and any GitHub repo or MCP server you add yourself. No analytics or tracking is shipped.
 • This app is not affiliated with, endorsed by, or connected to any other AI product, and it makes no claim to be an official product of any other company.`;
 
@@ -100,11 +103,12 @@ export default function SettingsScreen() {
   const [provider, setProvider] = useState<Provider>('openai-compatible');
   const [apiKey, setApiKeyState] = useState('');
   const [endpoint, setEndpoint] = useState('');
-  const [model, setModel] = useState('gpt-4o-mini');
+  const [model, setModel] = useState('');
   const [contextWindow, setContextWindow] = useState('8192');
   const [msg, setMsg] = useState('');
   const [savedSetups, setSavedSetups] = useState<ModelSetup[]>([]);
   const [active, setActive] = useState<UniversalConfig | null>(null);
+  const [mainAvatar, setMainAvatar] = useState(MAIN_CHAT_AVATAR_DEFAULT);
 
   const refreshSaved = useCallback(async () => {
     try {
@@ -122,6 +126,8 @@ export default function SettingsScreen() {
       setModel(u.model);
       setContextWindow(String(u.contextWindow));
       setApiKeyState((await getApiKey(u.provider)) ?? '');
+      const savedAvatar = await getSetting('main_chat_avatar').catch(() => null);
+      if (savedAvatar) setMainAvatar(savedAvatar);
     })().catch(() => {});
     refreshSaved().catch(() => {});
   }, [refreshSaved]);
@@ -298,7 +304,7 @@ export default function SettingsScreen() {
             <TextInput
               accessibilityLabel="Model name"
               onChangeText={setModel}
-              placeholder="gpt-4o-mini"
+              placeholder="Model ID from your provider"
               placeholderTextColor={tokens.textMuted}
               style={[styles.input, { flex: 1 }]}
               value={model}
@@ -317,6 +323,11 @@ export default function SettingsScreen() {
           <Button title="Save" onPress={save} />
         </Card>
         {msg ? <Card><Text>{msg}</Text></Card> : null}
+        <Text style={styles.sectionTitle}>Main Chat avatar</Text>
+        <Text style={styles.sub}>Pick the avatar for Main Chat. Each bot has its own pick on its edit screen.</Text>
+        <Card>
+          <AvatarPicker value={mainAvatar} onChange={async (id) => { setMainAvatar(id); await setSetting('main_chat_avatar', id); }} />
+        </Card>
         <Text style={styles.sectionTitle}>Saved models</Text>
         <Card>
           {savedSetups.length === 0 ? (

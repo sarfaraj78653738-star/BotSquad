@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback } from 'react';
 import { Button, Card, Field } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
-import { createProject, deleteProject, listProjects, Project } from '../src/lib/projects';
+import { createProject, deleteProject, listProjectChats, listProjects, Project, ProjectChatLink } from '../src/lib/projects';
 import { useTokens } from '../src/lib/tokens';
 
 // Projects — local only, starts empty. Create (name + optional
@@ -15,7 +15,9 @@ import { useTokens } from '../src/lib/tokens';
 export default function ProjectsScreen() {
   const tokens = useTokens();
   const styles = getStyles(tokens);
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [linked, setLinked] = useState<ProjectChatLink[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selected, setSelected] = useState<Project | null>(null);
@@ -23,6 +25,10 @@ export default function ProjectsScreen() {
 
   const refresh = useCallback(async () => { setProjects(await listProjects().catch(() => [])); }, []);
   useFocusEffect(useCallback(() => { refresh().catch(() => {}); }, [refresh]));
+  useFocusEffect(useCallback(() => {
+    if (selected) listProjectChats(selected.id).then(setLinked).catch(() => setLinked([]));
+    else setLinked([]);
+  }, [selected]));
 
   async function create() {
     const trimmed = name.trim();
@@ -52,7 +58,21 @@ export default function ProjectsScreen() {
         </View>
         <ScrollView style={styles.body}>
           {selected.description ? <Text style={styles.bodyText}>{selected.description}</Text> : null}
-          <Text style={styles.sub}>Chats can be linked to this project later.</Text>
+          <Text style={styles.sub}>Linked chats — added from a chat's menu (Add to project).</Text>
+          {linked.length === 0 ? (
+            <Text style={styles.sub}>No chats linked yet.</Text>
+          ) : linked.map((l) => (
+            <Card key={`${l.kind}-${l.chatId}`}>
+              <Pressable onPress={() => {
+                if (l.kind === 'main') router.push({ pathname: '/', params: { chatId: l.chatId } } as never);
+                else if (l.kind === 'bot') router.push(`/chat/${l.chatId}` as never);
+                else router.push({ pathname: '/group', params: { threadId: l.chatId } } as never);
+              }}>
+                <Text style={styles.name}>{l.title}</Text>
+                <Text style={styles.sub}>{l.kind === 'main' ? 'Main Chat' : l.kind === 'bot' ? 'Bot chat' : 'Group chat'}</Text>
+              </Pressable>
+            </Card>
+          ))}
           <Button title="Delete project" variant="danger" onPress={() => confirmDelete(selected)} />
         </ScrollView>
       </View>

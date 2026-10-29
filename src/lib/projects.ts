@@ -61,3 +61,29 @@ export async function deleteArtifact(id: string): Promise<void> {
   const d = await getDb();
   await d.runAsync('DELETE FROM artifacts WHERE id = ?', [id]);
 }
+
+// ---- Chat-to-project links (thread menu "Add to project") ----
+// A project keeps a list of linked chats (Main, bot, or group
+// threads). The link stores the chat's title at link time so the
+// Projects screen can list it even if the thread is later renamed;
+// opening a linked chat routes by kind + id.
+export type ProjectChatLink = { projectId: string; kind: 'main' | 'bot' | 'group'; chatId: string; title: string; createdAt: string };
+
+async function ensureLinkTable() {
+  await ensureTables();
+  const d = await getDb();
+  await d.execAsync(`CREATE TABLE IF NOT EXISTS project_chats (project_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (project_id, kind, chat_id))`);
+}
+
+export async function linkChatToProject(projectId: string, kind: 'main' | 'bot' | 'group', chatId: string, title: string): Promise<void> {
+  await ensureLinkTable();
+  const d = await getDb();
+  await d.runAsync('INSERT OR REPLACE INTO project_chats (project_id, kind, chat_id, title, created_at) VALUES (?,?,?,?,?)', [projectId, kind, chatId, title, nowIso()]);
+}
+
+export async function listProjectChats(projectId: string): Promise<ProjectChatLink[]> {
+  await ensureLinkTable();
+  const d = await getDb();
+  const rows = await d.getAllAsync('SELECT * FROM project_chats WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+  return (rows as any[]).map((r) => ({ projectId: r.project_id, kind: r.kind, chatId: r.chat_id, title: r.title, createdAt: r.created_at }));
+}

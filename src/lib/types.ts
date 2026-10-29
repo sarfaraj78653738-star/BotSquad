@@ -6,6 +6,10 @@ export interface Bot {
   role: string;
   avatarColor: string;
   avatarIcon: string;
+  // User-selected cute avatar variant id (see src/lib/avatars.ts).
+  // Optional: bots created before avatars, or without a pick, fall
+  // back to a stable variant derived from the bot id.
+  avatar?: string;
   task: string;
   personality: string;
   instructions: string;

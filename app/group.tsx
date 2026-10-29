@@ -1,12 +1,19 @@
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Avatar, Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
+import { Feather } from '@expo/vector-icons';
+import { Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
+import { BotAvatar } from '../src/components/BotAvatar';
+import { avatarFor } from '../src/lib/avatars';
+import { ThreadMenu } from '../src/components/ThreadMenu';
+import { buildTranscript, exportChatZip } from '../src/lib/chatExport';
+import { linkChatToProject } from '../src/lib/projects';
+import { addChatToHome, shortcutUri } from '../src/lib/shortcut';
 import { MenuButton } from '../src/components/Drawer';
 import { ComposerBar } from '../src/components/ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from '../src/components/LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../src/lib/liveBrowser';
-import { createGroupThread, deleteGroupThread, listBots, listGroupMembers, listGroupMessages, listGroupThreads, setGroupMessageApproval } from '../src/lib/db';
+import { createGroupThread, deleteGroupThread, getPinnedThreads, listBots, listGroupMembers, listGroupMessages, listGroupThreads, renameGroupThread, setGroupMessageApproval, togglePinThread } from '../src/lib/db';
 import { runGroupMessage } from '../src/lib/group';
 import { isRawErrorText } from '../src/lib/errors';
 import { saveArtifactFromReply } from '../src/lib/projects';
@@ -36,6 +43,8 @@ export default function GroupScreen() {
   const [failedCode, setFailedCode] = useState<number | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
   const [voiceNote, setVoiceNote] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPinned, setMenuPinned] = useState(false);
   const voiceBase = useRef('');
   const appliedThreadId = useRef<string | null>(null);
   // Live in-chat browser for the group thread, same rules as ChatView:
@@ -121,7 +130,7 @@ export default function GroupScreen() {
     await send(`[Attachment: ${att.name} (${formatSize(att.size)})] — the file itself was not uploaded or read; treat this only as a note that the user attached it.`);
   }
 
-  const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? 'TeamBots';
+  const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? 'BotSquad';
 
   return (
     <View style={styles.wrap}>
@@ -137,13 +146,25 @@ export default function GroupScreen() {
         <View style={styles.header}>
           <MenuButton />
           <Text style={styles.headerTitle} numberOfLines={1}>{selected.title}</Text>
-          <Pressable
-            accessibilityLabel="Start a new group chat"
-            onPress={() => { setSelected(null); setInput(''); setFailedCode(null); setFailedText(null); appliedThreadId.current = null; refresh(); }}
-            style={styles.newChatButton}
-          >
-            <Text style={styles.newChatText}>+ New chat</Text>
-          </Pressable>
+          <View style={styles.headerRight}>
+            <Pressable
+              accessibilityLabel="Start a new group chat"
+              onPress={() => { setSelected(null); setInput(''); setFailedCode(null); setFailedText(null); appliedThreadId.current = null; refresh(); }}
+              style={styles.newChatButton}
+            >
+              <Text style={styles.newChatText}>+ New chat</Text>
+            </Pressable>
+            {messages.length > 0 ? (
+              <Pressable
+                accessibilityLabel="Group chat menu"
+                accessibilityRole="button"
+                onPress={async () => { setMenuPinned((await getPinnedThreads().catch(() => [] as string[])).includes(selected.id)); setMenuOpen(true); }}
+                style={styles.menuButton}
+              >
+                <Feather name="more-vertical" size={20} color={tokens.text} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       ) : (
         <View style={styles.header}>
@@ -151,6 +172,21 @@ export default function GroupScreen() {
           <Text style={styles.headerTitle}>Group</Text>
           <View style={{ width: 34 }} />
         </View>
+      )}
+
+      {selected && (
+        <ThreadMenu
+          visible={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          target={{ kind: 'group', id: selected.id, title: selected.title, transcript: buildTranscript(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))) }}
+          pinned={menuPinned}
+          onRename={async (name) => { await renameGroupThread(selected.id, name); setSelected({ ...selected, title: name }); }}
+          onTogglePin={async () => { setMenuPinned(await togglePinThread(selected.id)); }}
+          onAddToProject={async (projectId) => { await linkChatToProject(projectId, 'group', selected.id, selected.title); }}
+          onAddToHome={async () => addChatToHome(selected.title, shortcutUri('group', selected.id))}
+          onExportZip={async () => { try { await exportChatZip(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))); } catch { Alert.alert('Export failed', 'The ZIP could not be created. Try again.'); } }}
+          onDelete={async () => { await deleteGroupThread(selected.id); setSelected(null); refresh(); }}
+        />
       )}
 
       {!selected && (
@@ -163,7 +199,7 @@ export default function GroupScreen() {
             <Pressable key={b.id} onPress={() => setPicked((p) => (p.includes(b.id) ? p.filter((x) => x !== b.id) : [...p, b.id]))}>
               <Card>
                 <View style={styles.row}>
-                  <Avatar color={b.avatarColor} label={b.name} size={36} />
+                  <BotAvatar variant={avatarFor(b.id, b.avatar)} size={36} />
                   <CheckBox selected={picked.includes(b.id)} />
                   <Text style={styles.name}>{b.name}, {b.role}</Text>
                 </View>
@@ -287,6 +323,8 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   voiceNote: { color: tokens.textMuted, fontSize: tokens.font.sm, marginBottom: 4 },
   h: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 8, marginTop: 16 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
+  headerRight: { alignItems: 'center', flexDirection: 'row', gap: 6 },
+  menuButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 17, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   input: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, color: tokens.text, fontSize: tokens.font.md, marginBottom: 12, padding: 14 },
   name: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },

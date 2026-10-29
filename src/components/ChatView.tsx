@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, getBot, getOrCreateChat, getSetting, listBotSkillIds, listBots, listMemory, listMessages, listSkills, saveSkill, setMessageApproval } from '../lib/db';
-import { getUniversalChatId, setUniversalChatId } from '../lib/universal';
+import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotSkillIds, listBots, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setMessageApproval, setUniversalTitle, togglePinThread } from '../lib/db';
+import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
 import { saveArtifactFromReply } from '../lib/projects';
+import { buildTranscript, exportChatZip } from '../lib/chatExport';
+import { linkChatToProject } from '../lib/projects';
+import { addChatToHome, shortcutUri } from '../lib/shortcut';
+import { ThreadMenu } from './ThreadMenu';
 import { chatWithBot } from '../lib/providers';
 import { errorCode, isRawErrorText } from '../lib/errors';
 import { Bot, Message, newId, nowIso } from '../lib/types';
@@ -32,7 +38,10 @@ function makeUniversalBot(): Bot {
     instructions: '',
     boundaries: 'Never send, publish, buy, or delete anything externally. Drafts need user approval.',
     provider: 'openai-compatible',
-    model: 'gpt-4o-mini',
+    // Placeholder only: universal mode sends the stored universal
+    // config (see providers.ts), never this field. It is empty so the
+    // app never presents a model of its own (user order 2026-10-29).
+    model: '',
     endpoint: undefined,
     isPinned: 0,
     createdAt: nowIso(),
@@ -40,9 +49,10 @@ function makeUniversalBot(): Bot {
   };
 }
 
-export function ChatView({ botId, universal, universalChatId, topBar }: { botId?: string; universal?: boolean; universalChatId?: string; topBar: (bot: Bot | null) => React.ReactNode }) {
+export function ChatView({ botId, universal, universalChatId, topBar }: { botId?: string; universal?: boolean; universalChatId?: string; topBar: (bot: Bot | null, actions?: React.ReactNode) => React.ReactNode }) {
   const tokens = useTokens();
   const styles = getStyles(tokens);
+  const router = useRouter();
   const [bot, setBot] = useState<Bot | null>(() => (universal ? makeUniversalBot() : null));
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatId, setChatId] = useState('');
@@ -52,6 +62,9 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
   // a sentence, never raw provider text, never a numeric prefix.
   const [failedCode, setFailedCode] = useState<number | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
+  const [notice, setNotice] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPinned, setMenuPinned] = useState(false);
   const [adsRemoved, setAdsRemoved] = useState(false);
   const [voiceNote, setVoiceNote] = useState('');
   const voiceBase = useRef('');
@@ -71,7 +84,11 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         // thread is the stored current id (or the thread History asked
         // for, which then becomes current); addMessage's chats-table
         // updated_at update simply affects 0 rows, which is fine.
-        setBot(makeUniversalBot());
+        // The header shows the thread's renamed title when one exists.
+        const universalBot = makeUniversalBot();
+        const savedTitle = await getUniversalTitle(universalChatId ?? (await getUniversalChatId())).catch(() => null);
+        if (savedTitle?.trim()) universalBot.name = savedTitle.trim();
+        setBot(universalBot);
         const id = universalChatId ?? (await getUniversalChatId());
         if (universalChatId) await setUniversalChatId(universalChatId);
         setChatId(id);
@@ -105,10 +122,100 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     setFailedText(null);
   }
 
-  // reuseUser: a Retry resends the failed user text WITHOUT adding a
-  // second copy of the user's bubble to the chat.
+  // Header thread menu (three-dot): Share, Rename, Pin/Unpin, Add to
+  // project, Add to home, Export ZIP, Delete. It only exists for a
+  // thread that already has messages — a fresh empty chat shows no
+  // header actions at all (user rule 2026-10-29). For a bot chat,
+  // Rename renames the bot itself, since the bot's name is the name
+  // the user sees for that chat.
+  const threadTitle = bot?.name ?? 'Main Chat';
+  const threadTranscript = () => buildTranscript(threadTitle, messages.map((m) => ({ role: m.role, text: m.text })));
+
+  async function openMenu() {
+    setMenuPinned((await getPinnedThreads().catch(() => [] as string[])).includes(chatId));
+    setMenuOpen(true);
+  }
+
+  async function handleRename(name: string) {
+    if (universal) {
+      await setUniversalTitle(chatId, name);
+      setBot((b) => (b ? { ...b, name } : b));
+    } else if (bot) {
+      const updated = { ...bot, name, updatedAt: new Date().toISOString() };
+      await saveBot(updated);
+      setBot(updated);
+    } else {
+      await renameChat(chatId, name);
+    }
+  }
+
+  async function handleTogglePin() {
+    const pinned = await togglePinThread(chatId);
+    setMenuPinned(pinned);
+  }
+
+  async function handleAddToProject(projectId: string) {
+    // Bot chats open by bot id, so the link stores the bot id for
+    // bot chats (the chats-table id would open nothing).
+    const linkId = universal ? chatId : (bot?.id ?? chatId);
+    await linkChatToProject(projectId, universal ? 'main' : 'bot', linkId, threadTitle);
+  }
+
+  async function handleAddToHome() {
+    const kind = universal ? 'main' : 'bot';
+    const shortcutId = universal ? chatId : (bot?.id ?? chatId);
+    return addChatToHome(threadTitle, shortcutUri(kind, shortcutId));
+  }
+
+  async function handleExportZip() {
+    try {
+      await exportChatZip(threadTitle, messages.map((m) => ({ role: m.role, text: m.text })));
+    } catch {
+      Alert.alert('Export failed', 'The ZIP could not be created. Try again.');
+    }
+  }
+
+  async function handleDeleteThread() {
+    if (universal) {
+      await deleteUniversalThread(chatId);
+      const current = await getUniversalChatId().catch(() => '');
+      if (current === chatId) await setUniversalChatId('universal-chat');
+      router.replace('/');
+    } else {
+      await deleteChat(chatId);
+      router.replace('/bots');
+    }
+  }
+
+  function headerIconButton(icon: React.ComponentProps<typeof Feather>['name'], label: string, onPress: () => void) {
+    return (
+      <Pressable accessibilityLabel={label} accessibilityRole="button" onPress={onPress} style={styles.headerIconButton}>
+        <Feather name={icon} size={20} color={tokens.text} />
+      </Pressable>
+    );
+  }
+
+  // Header actions, gated on the thread having messages: a fresh empty
+  // chat shows none of them. Main Chat gets Export + New chat + menu;
+  // a bot chat gets only the menu (its screen already owns "+ New").
+  const hasMessages = messages.length > 0;
+  const headerActions = hasMessages ? (
+    <View style={styles.headerActions}>
+      {universal ? headerIconButton('file-text', 'Export chat as ZIP', () => { void handleExportZip(); }) : null}
+      {universal ? headerIconButton('plus', 'Start a new chat', () => { void newChat(); }) : null}
+      {headerIconButton('more-vertical', 'Chat menu', () => { void openMenu(); })}
+    </View>
+  ) : undefined;
   async function send(text: string, reuseUser = false) {
     if (!bot || !chatId || !text.trim()) return;
+    setNotice('');
+    // No model of the app's own exists anymore: if Main Chat has no
+    // saved model, say so plainly instead of sending with a blank
+    // model name and showing a cryptic provider error.
+    if (universal && !(await getUniversal()).model.trim()) {
+      setNotice('No model is set yet. Save your model in Settings, then chat here.');
+      return;
+    }
     // Browser intent in the user's own words opens the in-chat panel
     // at once; the model reply may then drive it with [BROWSER ...]
     // commands (read-only actions run, tap/type wait for approval).
@@ -180,14 +287,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
 
   return (
     <View style={styles.wrap}>
-      {topBar(bot)}
-      {universal ? (
-        <View style={styles.newChatRow}>
-          <Pressable accessibilityLabel="Start a new chat" onPress={() => { void newChat(); }} style={styles.newChatButton}>
-            <Text style={styles.newChatText}>+ New chat</Text>
-          </Pressable>
-        </View>
-      ) : null}
+      {topBar(bot, headerActions)}
       <AdSlot visible={!adsRemoved && loading} />
       {browserExpanded ? null : <FlatList
         data={messages}
@@ -256,6 +356,19 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       ) : null}
 
       <LiveBrowserPanel ref={browserRef} botName={bot.name} onExpandedChange={setBrowserExpanded} />
+      {notice ? <Text style={styles.voiceNote}>{notice}</Text> : null}
+      <ThreadMenu
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        target={{ kind: universal ? 'main' : 'bot', id: chatId, title: threadTitle, transcript: threadTranscript() }}
+        pinned={menuPinned}
+        onRename={handleRename}
+        onTogglePin={handleTogglePin}
+        onAddToProject={handleAddToProject}
+        onAddToHome={handleAddToHome}
+        onExportZip={handleExportZip}
+        onDelete={handleDeleteThread}
+      />
       <View style={styles.composerWrap}>
         <ComposerBar
           input={input}
@@ -280,14 +393,13 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
   saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700' },
   composerWrap: { paddingBottom: 12, paddingHorizontal: tokens.space.md, paddingTop: 4 },
+  headerActions: { alignItems: 'center', flexDirection: 'row', gap: 2 },
+  headerIconButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 17, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
   failedRow: { alignItems: 'center', borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   failedText: { color: tokens.danger, fontSize: tokens.font.md, fontWeight: '700' },
   list: { flex: 1 },
   listContent: { padding: tokens.space.md },
   msgActions: { alignItems: 'center', flexDirection: 'row', gap: 16, marginTop: 8 },
-  newChatButton: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
-  newChatRow: { alignItems: 'flex-end', paddingHorizontal: tokens.space.md, paddingTop: 2 },
-  newChatText: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 8 },
   noteRow: { alignItems: 'center', marginBottom: 16 },
   noteText: { color: tokens.textMuted, fontSize: tokens.font.sm, textAlign: 'center' },

@@ -1,4 +1,5 @@
-import { Stack } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter } from 'expo-router';
+import { Linking } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +26,36 @@ function ThemedSafeArea({ children }: { children: React.ReactNode }) {
   return <SafeAreaView style={{ flex: 1, backgroundColor: tokens.bg }}>{children}</SafeAreaView>;
 }
 
+// Deep links from Android home-screen shortcuts ("Add to home"):
+// teambots://open?kind=main&chatId=… | kind=bot&botId=… |
+// kind=group&threadId=…. Parsed by hand (no URLSearchParams reliance)
+// and routed to the exact thread. Malformed links are ignored.
+function DeepLinkHandler() {
+  const router = useRouter();
+  const navState = useRootNavigationState();
+  useEffect(() => {
+    if (!navState?.key) return;
+    const handle = (url: string | null) => {
+      if (!url || !url.startsWith('teambots://open')) return;
+      try {
+        const query = url.split('?')[1] ?? '';
+        const params: Record<string, string> = {};
+        for (const part of query.split('&')) {
+          const [k, v] = part.split('=');
+          if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? '');
+        }
+        if (params.kind === 'main' && params.chatId) router.push({ pathname: '/', params: { chatId: params.chatId } } as never);
+        else if (params.kind === 'bot' && params.botId) router.push(`/chat/${params.botId}` as never);
+        else if (params.kind === 'group' && params.threadId) router.push({ pathname: '/group', params: { threadId: params.threadId } } as never);
+      } catch { /* ignore malformed links */ }
+    };
+    Linking.getInitialURL().then(handle).catch(() => {});
+    const sub = Linking.addEventListener('url', (e) => handle(e.url));
+    return () => sub.remove();
+  }, [navState?.key, router]);
+  return null;
+}
+
 export default function RootLayout() {
   useEffect(() => {
     (async () => {
@@ -44,6 +75,7 @@ export default function RootLayout() {
         <ThemedStatusBar />
         <DrawerProvider>
           <ThemedSafeArea>
+            <DeepLinkHandler />
             <Stack screenOptions={{ headerShown: false }} />
           </ThemedSafeArea>
         </DrawerProvider>
