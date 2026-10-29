@@ -200,7 +200,6 @@ export default function ConnectScreen() {
                 </Pressable>
               </Card>
             )}
-            <Text style={styles.note}>Services that need a login (Gmail, Instagram, and similar) are listed under Coming soon below — they arrive with the server phase.</Text>
             {COMING_SOON_SERVICES.filter((c) => matches(c.service) || matches(c.blurb)).length > 0 && (
               <>
                 <Text style={styles.sectionTitle}>Coming soon</Text>
