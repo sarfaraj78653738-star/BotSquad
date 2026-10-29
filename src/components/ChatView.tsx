@@ -19,6 +19,7 @@ import { connectedServicesPrompt } from '../lib/serviceTools';
 import { buildCrossChatDigest } from '../lib/crossChat';
 import { parseSkillCallout } from '../lib/skillCallout';
 import { mcpPromptBlock, parseMcpCallout } from '../lib/mcpCallout';
+import { parseConnectionCallout } from '../lib/connectionCallout';
 import { listMcpTools } from '../lib/mcp';
 import { ThreadMenu } from './ThreadMenu';
 import { chatWithBot } from '../lib/providers';
@@ -267,12 +268,21 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         const mcpTools = await listMcpTools(mcpCallout.server.id, mcpCallout.server.url).catch(() => []);
         mcpBlock = mcpPromptBlock(mcpCallout.server.name, mcpTools, true);
       }
+      // Connection callout, same model as skills/MCP: "/github ..."
+      // or "GitHub, ..." grants that connection for this turn only,
+      // on top of the bot's standing-enabled connections. Main Chat
+      // ignores the distinction (all connections are already there).
+      const connCallout = parseConnectionCallout(mcpEffectiveText, await listConnections());
+      const connEffectiveText = connCallout.connection ? connCallout.cleanText : mcpEffectiveText;
       const profilePrefs = (await getSetting('profile_preferences')) ?? '';
       const connIds = universal ? [] : await listBotConnectionIds(bot.id);
       const enabledConns = connIds.length
         ? (await listConnections()).filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }))
         : [];
-      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, enabledConns) + mcpBlock;
+      const effectiveConns = connCallout.connection && !enabledConns.some((c) => c.service === connCallout.connection!.service && c.name === connCallout.connection!.name)
+        ? [...enabledConns, { name: connCallout.connection.name, service: connCallout.connection.service }]
+        : enabledConns;
+      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, effectiveConns) + mcpBlock;
       const history = next.slice(-10).map((m) => ({ role: m.role, text: m.text }));
       // Main Chat is an agent, not just a chatbot: it knows the other
       // threads' recent context, and it can work with workspace files
@@ -290,7 +300,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         systemFull += AGENT_TOOLS_PROMPT;
         const svcPrompt = await connectedServicesPrompt().catch(() => '');
         if (svcPrompt) systemFull += svcPrompt;
-        let reply = await chatWithBot(bot, systemFull, history, mcpEffectiveText);
+        let reply = await chatWithBot(bot, systemFull, history, connEffectiveText);
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
@@ -322,14 +332,15 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         // file and deploy tools stay Main Chat only, and any other
         // tool block is stripped, never executed. Guards: mcp_call
         // only for the server called out this turn; service_request
-        // only for a service enabled for this bot — anything else
-        // returns an error result and never executes.
+        // only for a service enabled for this bot or called out this
+        // turn — anything else returns an error result and never
+        // executes.
         let botToolsPrompt = '';
-        if (enabledConns.length) {
+        if (effectiveConns.length) {
           botToolsPrompt = `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
         }
-        let reply = await chatWithBot(bot, system + botToolsPrompt, history, mcpEffectiveText);
-        if (mcpCallout.server || enabledConns.length) {
+        let reply = await chatWithBot(bot, system + botToolsPrompt, history, connEffectiveText);
+        if (mcpCallout.server || effectiveConns.length) {
           const loopHistory: { role: string; text: string }[] = [];
           const actionsTaken: string[] = [];
           for (let step = 0; step < 8; step++) {
@@ -349,9 +360,9 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
                 actionsTaken.push(`mcp_call ${argStr('tool')}`);
               } else {
                 const svc = argStr('service');
-                const allowed = enabledConns.some((c) => c.service.toLowerCase() === svc.toLowerCase() || c.name.toLowerCase() === svc.toLowerCase());
+                const allowed = effectiveConns.some((c) => c.service.toLowerCase() === svc.toLowerCase() || c.name.toLowerCase() === svc.toLowerCase());
                 if (!allowed) {
-                  result = `Error: service "${svc}" is not enabled for this bot.`;
+                  result = `Error: service "${svc}" is not enabled for this bot or called out this turn.`;
                 } else {
                   result = await executeAgentTool(call, requestApproval);
                 }

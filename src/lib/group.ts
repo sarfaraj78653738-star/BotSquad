@@ -4,6 +4,7 @@ import { chatWithBot } from './providers';
 import { errorCode } from './errors';
 import { parseSkillCallout } from './skillCallout';
 import { mcpPromptBlock, parseMcpCallout } from './mcpCallout';
+import { parseConnectionCallout } from './connectionCallout';
 import { listMcpTools } from './mcp';
 import { executeAgentTool, parseToolCalls, stripToolBlocks } from './agent';
 import { Bot, GroupMessage, newId, nowIso } from './types';
@@ -62,6 +63,11 @@ export async function runGroupMessage(
 
   const profilePrefs = (await getSetting('profile_preferences')) ?? '';
   const allConns = await listConnections().catch(() => []);
+  // Connection callout, same model as skills/MCP: "/github ..." or
+  // "GitHub, ..." grants that connection to every bot for this turn
+  // only, on top of each bot's standing-enabled connections.
+  const connCallout = parseConnectionCallout(mcpEffectiveText, allConns);
+  const connEffectiveText = connCallout.connection ? connCallout.cleanText : mcpEffectiveText;
 
   for (const bot of members) {
     onBotWorking?.(bot.name);
@@ -70,20 +76,23 @@ export async function runGroupMessage(
       const enabledSkills = callout.skill ? [{ name: callout.skill.name, template: callout.skill.template }] : [];
       const connIds = await listBotConnectionIds(bot.id).catch(() => [] as string[]);
       const enabledConns = allConns.filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }));
-      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, enabledConns) + mcpBlock;
+      const effectiveConns = connCallout.connection && !enabledConns.some((c) => c.service === connCallout.connection!.service && c.name === connCallout.connection!.name)
+        ? [...enabledConns, { name: connCallout.connection.name, service: connCallout.connection.service }]
+        : enabledConns;
+      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, effectiveConns) + mcpBlock;
       // Same tool loop as single-bot chats, per bot: only mcp_call
       // and service_request, each approval-gated. Guards: mcp_call
       // only for the server called out this turn; service_request
-      // only for a service enabled for this bot. Without an approval
-      // callback (should not happen from group.tsx), gated calls are
-      // refused rather than run blind.
+      // only for a service enabled for this bot or called out this
+      // turn. Without an approval callback (should not happen from
+      // group.tsx), gated calls are refused rather than run blind.
       let botToolsPrompt = '';
-      if (enabledConns.length) {
+      if (effectiveConns.length) {
         botToolsPrompt = `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
       }
       const approve = requestApproval ?? (async () => false);
-      let reply = await chatWithBot(bot, system + botToolsPrompt, history, mcpEffectiveText);
-      if (mcpCallout.server || enabledConns.length) {
+      let reply = await chatWithBot(bot, system + botToolsPrompt, history, connEffectiveText);
+      if (mcpCallout.server || effectiveConns.length) {
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
@@ -103,9 +112,9 @@ export async function runGroupMessage(
               actionsTaken.push(`mcp_call ${argStr('tool')}`);
             } else {
               const svc = argStr('service');
-              const allowed = enabledConns.some((c) => c.service.toLowerCase() === svc.toLowerCase() || c.name.toLowerCase() === svc.toLowerCase());
+              const allowed = effectiveConns.some((c) => c.service.toLowerCase() === svc.toLowerCase() || c.name.toLowerCase() === svc.toLowerCase());
               if (!allowed) {
-                result = `Error: service "${svc}" is not enabled for this bot.`;
+                result = `Error: service "${svc}" is not enabled for this bot or called out this turn.`;
               } else {
                 result = await executeAgentTool(call, approve);
               }

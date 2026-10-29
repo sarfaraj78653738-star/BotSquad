@@ -82,10 +82,13 @@ export const tokens = lightTokens;
 
 export type ColorMode = 'system' | 'light' | 'dark';
 export type FontStyle = 'default' | 'system';
-// App language (user order 2026-10-29): English or Hindi, chosen in
-// Settings → General → Language. Stored like color/font prefs; the
-// drawer and Settings read it via useLanguage + t() in lib/i18n.
-export type Language = 'en' | 'hi';
+// App language (user order 2026-10-29): chosen in Settings → General →
+// Language. Stored like color/font prefs; the drawer and Settings
+// read it via useLanguage + t() in lib/i18n. RTL languages (Urdu,
+// Arabic) are deliberately NOT in this list yet — they need a layout
+// direction pass before their labels will sit right.
+export const LANGUAGE_CODES = ['en', 'hi', 'bn', 'ta', 'te', 'mr', 'es', 'fr', 'de', 'pt'] as const;
+export type Language = (typeof LANGUAGE_CODES)[number];
 
 // Stored preference keys (SQLite settings table). Both default when
 // nothing is stored: color mode defaults to System, font style to Default.
@@ -123,7 +126,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       const fs = await getSetting(FONT_STYLE_KEY);
       if (fs === 'system' || fs === 'default') setFontStyleState(fs);
       const lang = await getSetting(LANGUAGE_KEY);
-      if (lang === 'en' || lang === 'hi') setLanguageState(lang);
+      if ((LANGUAGE_CODES as readonly string[]).includes(lang ?? '')) setLanguageState(lang as Language);
     })().catch(() => {});
   }, []);
   useEffect(() => { applyFontStyle(fontStyle); }, [fontStyle]);
