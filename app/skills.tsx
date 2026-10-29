@@ -62,7 +62,7 @@ export default function SkillsScreen() {
       {bots.map((b) => (
         <Button key={b.id} title={b.name} variant={selectedBot === b.id ? 'primary' : 'secondary'} onPress={() => setSelectedBot(b.id)} />
       ))}
-      {msg ? <Card><Text>{msg}</Text></Card> : null}
+      {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
 
       <Text style={[styles.title, { marginTop: 20 }]}>{editingId ? 'Edit skill' : 'Add a skill'}</Text>
       <Field label="Skill name" onChangeText={setSkillName} value={skillName} />
@@ -93,6 +93,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   bold: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 4 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
+  msgText: { color: tokens.text, fontSize: tokens.font.md },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
   title: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800', marginBottom: 8 },
   wrap: { backgroundColor: tokens.bg, flex: 1 },

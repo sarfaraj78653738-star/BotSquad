@@ -39,15 +39,15 @@ export default function GithubInstallScreen() {
       if (ghHostedUrl.trim()) {
         const id = newId();
         await saveMcpServer({ id, name: preview.name, url: ghHostedUrl.trim(), createdAt: now });
-        setMsg('Installed as a live MCP connection (hosted HTTP/SSE URL you provided). List its tools, then enable specific tools per Bot.');
+        setMsg('Installed as MCP. Enable tools in MCP.');
       } else {
         await savePlugin({ id: newId(), name: preview.name, description: `${preview.description} — INSTALLED, NEEDS A HOST: code MCP server does not run on the phone in Phase 1.`, author: preview.author, repoUrl: `https://github.com/${preview.owner}/${preview.repo}`, manifest: preview.manifestText, permissions: preview.permissions, hasExecutableCode: true, createdAt: now });
-        setMsg('Installed as "needs a host". No code was run on the phone. Add its hosted HTTP/SSE URL later to use it.');
+        setMsg('Installed as needs-host. Add its hosted URL later.');
       }
     } else {
       await savePlugin({ id: newId(), name: preview.name, description: preview.description, author: preview.author, repoUrl: `https://github.com/${preview.owner}/${preview.repo}`, manifest: preview.manifestText, permissions: preview.permissions, hasExecutableCode: preview.hasExecutableCode, createdAt: now });
     }
-    if (preview.detectedType !== 'mcp') setMsg(`Installed: ${preview.name} (${preview.detectedType}). No code was executed. Enable it for a Bot from the Skills, Plugins, or MCP page.`);
+    if (preview.detectedType !== 'mcp') setMsg(`Installed: ${preview.name}. Enable it in ${preview.detectedType === 'plugin' ? 'Plugins' : 'Skills'}.`);
     setPreview(null); setGhUrl(''); setGhHostedUrl('');
   }
 
@@ -63,7 +63,7 @@ export default function GithubInstallScreen() {
       </View>
     <ScrollView style={styles.body}>
       <Text style={styles.sub}>Nothing installs until you approve the preview.</Text>
-      {msg ? <Card><Text>{msg}</Text></Card> : null}
+      {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
       <Field label="GitHub repo URL" onChangeText={setGhUrl} placeholder="https://github.com/owner/repo" value={ghUrl} />
       <Button title={previewLoading ? 'Checking…' : 'Preview repo'} disabled={previewLoading} onPress={doPreview} />
       {preview && (
@@ -100,6 +100,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   bold: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 4 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
+  msgText: { color: tokens.text, fontSize: tokens.font.md },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
   wrap: { backgroundColor: tokens.bg, flex: 1 },
 });

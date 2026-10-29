@@ -1,4 +1,4 @@
-import { addGroupMessage, getSetting, listBotSkillIds, listBots, listGroupMessages, listMemory, listSkills } from './db';
+import { addGroupMessage, getSetting, listBotConnectionIds, listBotSkillIds, listBots, listConnections, listGroupMessages, listMemory, listSkills } from './db';
 import { buildSystemPrompt } from './prompt';
 import { chatWithBot } from './providers';
 import { errorCode } from './errors';
@@ -37,6 +37,7 @@ export async function runGroupMessage(
   }));
 
   const profilePrefs = (await getSetting('profile_preferences')) ?? '';
+  const allConns = await listConnections().catch(() => []);
 
   for (const bot of members) {
     onBotWorking?.(bot.name);
@@ -44,7 +45,9 @@ export async function runGroupMessage(
       const memory = await listMemory(bot.id);
       const enabledIds = await listBotSkillIds(bot.id);
       const enabledSkills = (await listSkills()).filter((s) => enabledIds.includes(s.id));
-      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs);
+      const connIds = await listBotConnectionIds(bot.id).catch(() => [] as string[]);
+      const enabledConns = allConns.filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }));
+      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, enabledConns);
       const reply = await chatWithBot(bot, system, history, userText.trim());
       // A reply is delivered content, not a draft (same as Main/Bot
       // chats): no approval gate, no "(draft)" label.

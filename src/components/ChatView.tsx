@@ -6,7 +6,7 @@ import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotSkillIds, listBots, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
+import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotConnectionIds, listBotSkillIds, listBots, listConnections, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
 import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
@@ -248,7 +248,11 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       const enabledIds = await listBotSkillIds(bot.id);
       const enabledSkills = (await listSkills()).filter((s) => enabledIds.includes(s.id));
       const profilePrefs = (await getSetting('profile_preferences')) ?? '';
-      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs);
+      const connIds = universal ? [] : await listBotConnectionIds(bot.id);
+      const enabledConns = connIds.length
+        ? (await listConnections()).filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }))
+        : [];
+      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, enabledConns);
       const history = next.slice(-10).map((m) => ({ role: m.role, text: m.text }));
       // Main Chat is an agent, not just a chatbot: it knows the other
       // threads' recent context, and it can work with workspace files

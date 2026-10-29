@@ -294,31 +294,35 @@ export default function SettingsScreen() {
           {provider === 'openai-compatible' && (
             <Field label="API endpoint (blank = OpenAI)" onChangeText={setEndpoint} placeholder="https://api.openai.com/v1/chat/completions" value={endpoint} />
           )}
-          <Text style={styles.bold}>Model</Text>
           <View style={styles.modelRow}>
-            <TextInput
-              accessibilityLabel="Model name"
-              onChangeText={setModel}
-              placeholder="Model ID from your provider"
-              placeholderTextColor={tokens.textMuted}
-              style={[styles.input, { flex: 1 }]}
-              value={model}
-            />
-            <TextInput
-              accessibilityLabel="Context window"
-              autoCapitalize="none"
-              autoCorrect={false}
-              onChangeText={setContextWindow}
-              placeholder="e.g. 256k, 1M"
-              placeholderTextColor={tokens.textMuted}
-              style={[styles.input, styles.contextInput]}
-              value={contextWindow}
-            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bold}>Model</Text>
+              <TextInput
+                accessibilityLabel="Model name"
+                onChangeText={setModel}
+                placeholder="Model ID from your provider"
+                placeholderTextColor={tokens.textMuted}
+                style={styles.input}
+                value={model}
+              />
+            </View>
+            <View>
+              <Text style={styles.bold}>Context</Text>
+              <TextInput
+                accessibilityLabel="Context window"
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setContextWindow}
+                placeholder="e.g. 256k, 1M"
+                placeholderTextColor={tokens.textMuted}
+                style={[styles.input, styles.contextInput]}
+                value={contextWindow}
+              />
+            </View>
           </View>
-          <Text style={styles.sub}>Context window — type 256k, 546k, 1M, or a plain number.</Text>
           <Button title="Save" onPress={save} />
         </Card>
-        {msg ? <Card><Text>{msg}</Text></Card> : null}
+        {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
         <Text style={styles.sectionTitle}>Saved models</Text>
         <Card>
           {savedSetups.length === 0 ? (
@@ -408,6 +412,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   sheetRowText: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '600' },
   sheetRowTextActive: { color: tokens.text, fontWeight: '700' },
   sheetTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
+  msgText: { color: tokens.text, fontSize: tokens.font.md },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
   wrap: { backgroundColor: tokens.bg, flex: 1 },
 });
