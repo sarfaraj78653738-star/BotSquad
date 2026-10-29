@@ -1,18 +1,38 @@
-plugins {
-  id 'com.android.library'
-  id 'expo-module-gradle-plugin'
-}
+// SDK 52-style library build. The SDK 55 template's
+// 'expo-module-gradle-plugin' does NOT resolve in an SDK 52 prebuild
+// project (CI failed: "Plugin was not found"), so this uses the plain
+// Android library + Kotlin plugins, with versions taken from the host
+// app when present and SDK 52 values as fallback.
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
 
 group = 'expo.modules.chatshortcut'
-version = '0.7.10'
+
+def safeExtGet = { prop, fallback ->
+  rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+}
 
 android {
-  namespace "expo.modules.chatshortcut"
+  namespace 'expo.modules.chatshortcut'
+  compileSdkVersion safeExtGet('compileSdkVersion', 34)
   defaultConfig {
+    minSdkVersion safeExtGet('minSdkVersion', 24)
+    targetSdkVersion safeExtGet('targetSdkVersion', 34)
     versionCode 1
-    versionName "0.7.10"
+    versionName '0.1.0'
+  }
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+  kotlinOptions {
+    jvmTarget = '17'
   }
   lintOptions {
     abortOnError false
   }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
 }
