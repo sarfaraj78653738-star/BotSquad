@@ -84,20 +84,31 @@ export function buildTranscript(title: string, messages: { role: string; text: s
   return lines.join('\n');
 }
 
+// Shared ZIP helpers: the Workspace screen reuses them to export a
+// whole workspace, so the ZIP writer lives here, not only in chat
+// export. Files are text (code, pages, notes) — the writer stores
+// UTF-8 text, it is not a binary archiver.
+export function zipFilesBase64(files: { name: string; text: string }[]): string {
+  return base64(storedZip(files));
+}
+
+export async function shareZipFile(filename: string, b64: string): Promise<void> {
+  const dir = FileSystem.cacheDirectory;
+  if (!dir) throw new Error('No cache directory');
+  const uri = `${dir}${filename}`;
+  await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'Save ZIP' });
+  } else {
+    throw new Error('Sharing is not available');
+  }
+}
+
 function safeFileName(title: string): string {
   const cleaned = title.replace(/[^A-Za-z0-9-_ ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'chat';
   return `${cleaned}.zip`;
 }
 
 export async function exportChatZip(title: string, messages: { role: string; text: string }[]): Promise<void> {
-  const zip = storedZip([{ name: 'chat.txt', text: buildTranscript(title, messages) }]);
-  const dir = FileSystem.cacheDirectory;
-  if (!dir) throw new Error('No cache directory');
-  const uri = `${dir}${safeFileName(title)}`;
-  await FileSystem.writeAsStringAsync(uri, base64(zip), { encoding: FileSystem.EncodingType.Base64 });
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'Save chat ZIP' });
-  } else {
-    throw new Error('Sharing is not available');
-  }
+  await shareZipFile(safeFileName(title), zipFilesBase64([{ name: 'chat.txt', text: buildTranscript(title, messages) }]));
 }

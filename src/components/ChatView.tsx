@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { AdSlot, LoadingRow } from './ui';
+import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
@@ -14,6 +14,8 @@ import { saveArtifactFromReply } from '../lib/projects';
 import { buildTranscript, exportChatZip } from '../lib/chatExport';
 import { linkChatToProject } from '../lib/projects';
 import { addChatToHome, shortcutUri } from '../lib/shortcut';
+import { AGENT_TOOLS_PROMPT, executeAgentTool, parseToolCalls, stripToolBlocks } from '../lib/agent';
+import { buildCrossChatDigest } from '../lib/crossChat';
 import { ThreadMenu } from './ThreadMenu';
 import { chatWithBot } from '../lib/providers';
 import { errorCode, isRawErrorText } from '../lib/errors';
@@ -65,6 +67,14 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
   const [notice, setNotice] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPinned, setMenuPinned] = useState(false);
+  // Agent approval card: a file write/edit/delete pauses the agent
+  // loop here until the user taps Approve or Reject for that exact
+  // change. Nothing is written without that tap.
+  const [pendingApproval, setPendingApproval] = useState<{ summary: string; preview: string; resolve: (ok: boolean) => void } | null>(null);
+
+  function requestApproval(summary: string, preview: string): Promise<boolean> {
+    return new Promise((resolve) => setPendingApproval({ summary, preview, resolve }));
+  }
   const [adsRemoved, setAdsRemoved] = useState(false);
   const [voiceNote, setVoiceNote] = useState('');
   const voiceBase = useRef('');
@@ -240,21 +250,60 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       const profilePrefs = (await getSetting('profile_preferences')) ?? '';
       const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs);
       const history = next.slice(-10).map((m) => ({ role: m.role, text: m.text }));
-      const reply = await chatWithBot(bot, system, history, text.trim());
-      // Bot browser commands in the reply drive the panel. Tap/type
-      // actions stop at the panel's approval card; they never run
-      // without the user approving that exact action.
-      for (const action of parseBrowserCommands(reply)) browserRef.current?.requestAction(action);
+      // Main Chat is an agent, not just a chatbot: it knows the other
+      // threads' recent context, and it can work with workspace files
+      // and public web pages in a multi-step loop. A plain question
+      // still gets a plain reply — the loop only engages when the
+      // model emits a tool block for a real task. Bot chats keep the
+      // single-reply behaviour they were built for.
+      let finalReply: string;
+      if (universal) {
+        let systemFull = system;
+        const digest = await buildCrossChatDigest(chatId).catch(() => '');
+        if (digest) systemFull += `\n\n[OTHER CHATS CONTEXT — recent messages from this phone's other threads, so questions about them can be answered. Never reveal a thread's contents unless the user asks about that thread.]\n${digest}`;
+        systemFull += AGENT_TOOLS_PROMPT;
+        let reply = await chatWithBot(bot, systemFull, history, text.trim());
+        const loopHistory: { role: string; text: string }[] = [];
+        const actionsTaken: string[] = [];
+        for (let step = 0; step < 8; step++) {
+          const calls = parseToolCalls(reply);
+          if (calls.length === 0) break;
+          const results: string[] = [];
+          for (const call of calls) {
+            const result = await executeAgentTool(call, requestApproval);
+            results.push(`[Tool ${call.name} result]\n${result}`);
+            const target = typeof call.args.path === 'string' ? call.args.path : typeof call.args.query === 'string' ? call.args.query : typeof call.args.url === 'string' ? call.args.url : '';
+            actionsTaken.push(target ? `${call.name} ${target}` : call.name);
+          }
+          loopHistory.push({ role: 'assistant', text: reply });
+          loopHistory.push({ role: 'user', text: results.join('\n\n') });
+          if (step === 7) break;
+          reply = await chatWithBot(bot, systemFull, [...history, ...loopHistory], 'Continue with the task. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.');
+        }
+        finalReply = stripToolBlocks(reply);
+        if (!finalReply) finalReply = actionsTaken.length ? `Done. Changes: ${actionsTaken.join('; ')}. Open Workspace to preview or export.` : 'Done.';
+        // Bot browser commands in the final reply drive the panel. Tap/type
+        // actions stop at the panel's approval card; they never run
+        // without the user approving that exact action.
+        for (const action of parseBrowserCommands(finalReply)) browserRef.current?.requestAction(action);
+      } else {
+        const reply = await chatWithBot(bot, system, history, text.trim());
+        // Bot browser commands in the reply drive the panel. Tap/type
+        // actions stop at the panel's approval card; they never run
+        // without the user approving that exact action.
+        for (const action of parseBrowserCommands(reply)) browserRef.current?.requestAction(action);
+        finalReply = reply;
+      }
       // A reply is delivered content, not a draft: no approval gate.
       // (Earlier builds saved every reply as approvalState 'draft' and
       // showed Approve/Reject under it; that gate did nothing, since
       // the app never sends anything externally, and it only made
       // replies look broken. Replies are final on arrival; "Save as
       // artifact" is the explicit save action.)
-      const assistantMsg: Message = { id: newId(), chatId, botId: bot.id, role: 'assistant', text: reply, approvalState: null, createdAt: nowIso() };
+      const assistantMsg: Message = { id: newId(), chatId, botId: bot.id, role: 'assistant', text: finalReply, approvalState: null, createdAt: nowIso() };
       await addMessage(assistantMsg);
       setMessages([...next, assistantMsg]);
-      const note = extractMemoryNote(text, reply);
+      const note = extractMemoryNote(text, finalReply);
       if (note) await addMemory(bot.id, note, 'auto_learned');
       // Automatic skill saving, no approval prompt, no popup: a
       // pattern-based on-device detector (see lib/autoSkill.ts) saves
@@ -262,7 +311,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       // skill in the local skills store. It is NOT enabled for any bot
       // until the user reviews and enables it on the Skills page, and
       // an identical instruction is never saved twice.
-      const auto = detectAutoSkill(text.trim(), reply);
+      const auto = detectAutoSkill(text.trim(), finalReply);
       if (auto) {
         const existing = await listSkills();
         const snippet = auto.instruction.slice(0, 60);
@@ -370,6 +419,17 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         onExportZip={handleExportZip}
         onDelete={handleDeleteThread}
       />
+      {pendingApproval ? (
+        <View style={styles.approvalCard}>
+          <Text style={styles.approvalTitle}>Agent wants to change a file</Text>
+          <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
+          <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
+          <View style={styles.approvalRow}>
+            <Button title="Approve" onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
+            <Button title="Reject" variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
+          </View>
+        </View>
+      ) : null}
       <View style={styles.composerWrap}>
         <ComposerBar
           input={input}
@@ -392,6 +452,11 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
   saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700' },
+  approvalCard: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, marginHorizontal: tokens.space.md, marginBottom: 8, padding: tokens.space.md },
+  approvalPreview: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 6 },
+  approvalRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  approvalSummary: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600', marginTop: 4 },
+  approvalTitle: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800' },
   composerWrap: { paddingBottom: 12, paddingHorizontal: tokens.space.md, paddingTop: 4 },
   headerActions: { alignItems: 'center', flexDirection: 'row', gap: 2 },
   headerIconButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 17, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },

@@ -27,6 +27,7 @@ const HISTORY_ITEMS: DrawerItem[] = [
 const WORK_ITEMS: DrawerItem[] = [
   { label: 'Projects', icon: 'folder', route: '/projects' },
   { label: 'Artifacts', icon: 'file-text', route: '/artifacts' },
+  { label: 'Workspace', icon: 'code', route: '/workspace' },
 ];
 
 const SETTINGS_ITEM: DrawerItem = { label: 'Settings', icon: 'settings', route: '/settings' };
