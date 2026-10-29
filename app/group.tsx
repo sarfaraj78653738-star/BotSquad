@@ -304,7 +304,7 @@ export default function GroupScreen() {
             onSend={() => { void send(); }}
             onAttachment={(att) => { void handleAttachment(att); }}
             onVoicePartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
-            onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote('Voice transcript inserted — check it, then tap Send. Nothing was sent automatically.'); }}
+            onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote(''); }}
             onVoiceError={(m) => { voiceBase.current = ''; setVoiceNote(m); }}
           />
         </View>

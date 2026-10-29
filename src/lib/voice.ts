@@ -36,6 +36,12 @@ export async function startVoice(
   onFinal: (text: string) => void,
   onError: (message: string) => void,
 ): Promise<() => Promise<void>> {
+  // Set while the stop function runs: Android's recognizer fires a
+  // "client side error" (code 5) when it is torn down, so an error
+  // arriving during teardown is the stop itself, not a failure — it
+  // must never surface as a scary "5/Client side error" line after
+  // the user simply turned the mic off.
+  let stopping = false;
   const Voice = loadVoice();
   if (!Voice || typeof Voice.start !== 'function') {
     throw new VoiceError(
@@ -71,12 +77,28 @@ export async function startVoice(
     if (typeof v === 'string' && v) onFinal(v);
   };
   Voice.onSpeechError = (e: any) => {
-    onError(e?.error?.message ?? 'Speech recognition failed. Try again, or type instead.');
+    if (stopping) return;
+    const raw = e?.error;
+    const code = raw && typeof raw === 'object' ? String(raw.code ?? '') : '';
+    let message = raw && typeof raw === 'object' ? String(raw.message ?? '') : typeof raw === 'string' ? raw : '';
+    // The library may report "5/Client side error" as one string;
+    // never show a raw code prefix to the user.
+    message = message.replace(/^\d+\//, '').trim();
+    // Benign recognizer noise: tearing down (5), saying nothing (6/7).
+    // These are not failures — stay silent instead of alarming the
+    // user with an error line for a mic they just turned off.
+    const benign = code === '5' || code === '6' || code === '7'
+      || /client side error/i.test(message)
+      || /no match/i.test(message)
+      || /no speech|speech timeout/i.test(message);
+    if (benign) return;
+    onError(message || 'Speech recognition failed. Try again, or type instead.');
   };
   Voice.onSpeechEnd = () => {};
   await Voice.start('en-US');
 
   return async () => {
+    stopping = true;
     try { await Voice.stop(); } catch { /* already stopped */ }
     try { await Voice.destroy(); } catch { /* already destroyed */ }
     Voice.onSpeechPartialResults = () => {};

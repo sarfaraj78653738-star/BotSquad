@@ -60,10 +60,8 @@ export default function WorkspaceScreen() {
         <View style={{ width: 34 }} />
       </View>
       <View style={styles.body}>
-        <Text style={styles.sub}>Files Main Chat's agent mode saves here. Tap a file to preview it; .html pages open live in the app.</Text>
-        <Text style={styles.note}>Backend code does not run on the phone — export the ZIP and run it on a computer or server.</Text>
         <Button title="Export workspace ZIP" onPress={async () => { try { await exportWorkspaceZip(); } catch { Alert.alert('Export failed', 'The ZIP could not be created. Try again.'); } }} />
-        {files.length === 0 && <Card><Text style={styles.sub}>No files yet. Ask Main Chat to build something — a page, a site, a script — and it will save the files here.</Text></Card>}
+        {files.length === 0 && <Card><Text style={styles.sub}>No files yet.</Text></Card>}
         <FlatList
           data={files}
           keyExtractor={(f) => f.path}

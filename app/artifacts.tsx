@@ -33,7 +33,7 @@ export default function ArtifactsScreen() {
       </View>
       <ScrollView style={styles.body}>
         {items.length === 0 ? (
-          <Text style={styles.sub}>No artifacts yet. Save one from an assistant reply.</Text>
+          <Text style={styles.sub}>No artifacts yet.</Text>
         ) : items.map((a) => (
           <Card key={a.id}>
             <Text style={styles.title}>{a.title}</Text>

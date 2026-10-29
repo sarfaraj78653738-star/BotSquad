@@ -1,6 +1,9 @@
 import { fetchPublicPageText } from './providers';
 import { deleteWorkspaceFile, listWorkspaceFiles, readWorkspaceFile, safeWorkspacePath, writeWorkspaceFile } from './workspace';
 import { serviceRequest, vercelDeploy } from './serviceTools';
+import { listMcpServers } from './db';
+import { getMcpToken } from './connections';
+import { requireHttpsUrl } from './mcp';
 
 // Agent tools for Main Chat (user order 2026-10-29): the app is not
 // just a chatbot anymore — Main Chat can work with files, search its
@@ -33,6 +36,7 @@ Available tools:
 - browser_read {url}: read a PUBLIC web page as text. Never for logins, paywalls, or CAPTCHAs — those always go to the user.
 - service_request {service, method, path, body?}: call a CONNECTED service's own API. service is the service name from [CONNECTED SERVICES] (the prompt lists what is actually connected — never call a service that is not listed). method is GET, POST, PUT, PATCH, or DELETE. path is a relative API path only, like "/user/repos" — never a full URL. body is a JSON string for non-GET calls. GET calls run straight away; any other method runs ONLY after the user approves that exact call in chat. Examples: GitHub list repos GET "/user/repos"; Slack send POST "/chat.postMessage" {"channel":"#general","text":"hi"}; Telegram send POST "/sendMessage" {"chat_id":"123","text":"hi"}; Trello create card POST "/cards" {"name":"Buy milk","idList":"abc"}; Todoist create task POST "/tasks" {"content":"Buy milk"}; WhatsApp send POST "/{phoneId}/messages" {"messaging_product":"whatsapp","to":"919999999999","type":"text","text":{"body":"hi"}} — {phoneId} is filled from the connection, never invent it. You never see any key or token: never ask for one, never print one, never put one in a path or body.
 - vercel_deploy {files, project?}: publish workspace files as a live production site on Vercel (the "make my website live" tool). files is a list of workspace paths, like ["index.html", "style.css"]. Runs ONLY after the user approves the deploy, and only when Vercel is connected. Returns the live URL.
+- mcp_call {server, tool, args}: run one tool of the MCP server called out this turn (see the [MCP SERVER] block in your prompt — never call a server that is not called out). args is a JSON object. Runs ONLY after the user approves that exact call in chat.
 Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export, any live URL). You cannot run commands, servers, tests, or git on this phone — say so plainly if asked, and offer the workspace export instead. For a connected service you do not know the API for, try its standard REST path; if the service returns an error, report it plainly instead of guessing another call.
 `;
 
@@ -168,7 +172,34 @@ export async function executeAgentTool(
       if (!ok) return 'Rejected by user.';
       return vercelDeploy(files, project || undefined);
     }
+    case 'mcp_call': {
+      const serverName = argString(call.args, 'server');
+      const toolName = argString(call.args, 'tool');
+      const rawArgs = call.args.args;
+      const argsObj = rawArgs && typeof rawArgs === 'object' ? rawArgs as Record<string, unknown> : {};
+      if (!serverName || !toolName) return 'Error: mcp_call needs server and tool.';
+      const servers = await listMcpServers();
+      const server = servers.find((s) => s.name.toLowerCase() === serverName.toLowerCase());
+      if (!server) return `Error: no saved MCP server named "${serverName}".`;
+      const ok = await approve(`MCP call ${server.name} → ${toolName}`, JSON.stringify(argsObj).slice(0, 800) || 'No arguments.');
+      if (!ok) return 'Rejected by user.';
+      try {
+        requireHttpsUrl(server.url, 'MCP server URL');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
+        const token = await getMcpToken(server.id);
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch(server.url, {
+          method: 'POST', headers,
+          body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: toolName, arguments: argsObj } }),
+        });
+        const text = await res.text();
+        if (!res.ok) return `Error: MCP server returned HTTP ${res.status}: ${text.slice(0, 500)}`;
+        return text.length > 6000 ? text.slice(0, 6000) + '\n…(truncated)' : text;
+      } catch {
+        return `Error: could not reach MCP server ${server.name} (network issue).`;
+      }
+    }
     default:
-      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read, service_request, vercel_deploy.`;
+      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read, service_request, vercel_deploy, mcp_call.`;
   }
 }

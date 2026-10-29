@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { getUniversal, setUniversal, UniversalConfig } from '../lib/universal';
 import { listModelSetups, saveModelSetup, ModelSetup } from '../lib/modelSetups';
@@ -18,6 +19,7 @@ import { useTokens } from '../lib/tokens';
 export function ModelPicker() {
   const tokens = useTokens();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const styles = getStyles(tokens);
   const [model, setModel] = useState('');
   const [provider, setProvider] = useState<UniversalConfig['provider']>('openai-compatible');
@@ -108,6 +110,17 @@ export function ModelPicker() {
               {m.id === model ? <Feather name="check" size={18} color={tokens.text} /> : null}
             </Pressable>
           ))}
+          <Pressable
+            onPress={() => { setOpen(false); router.push('/model-setup' as never); }}
+            style={styles.row}
+          >
+            <Feather name="cpu" size={18} color={tokens.text} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowText}>Model setup</Text>
+              <Text style={styles.rowDesc} numberOfLines={1}>Add or edit models, keys, and endpoints.</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={tokens.text} />
+          </Pressable>
         </View>
       </Modal>
     </View>

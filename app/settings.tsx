@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Linking, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,7 +29,6 @@ const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof F
   { label: 'GitHub install', detail: 'Install skills, plugins, MCP servers', icon: 'github', route: '/github-install' },
   { label: 'Routines', detail: 'Scheduled skills and routines', icon: 'clock', route: '/routines' },
   { label: 'Legal', detail: 'Privacy, terms, ads, refunds & feedback', icon: 'shield', route: '/legal' },
-  { label: 'Ads & payments', detail: 'Plans and premium', icon: 'credit-card', route: '/ads-payments' },
 ];
 
 const COLOR_OPTIONS: { id: ColorMode; label: string; detail: string }[] = [
@@ -88,26 +87,88 @@ export default function SettingsScreen() {
   const [permText, setPermText] = useState('Open system settings to review');
 
 
-  // Permissions row: shows the REAL status, never a claimed one. Camera
-  // status comes from the image picker (a status check, not a prompt);
-  // microphone status comes from the OS check on Android. On any other
-  // platform, or if a check fails, the row says so and opens system
-  // settings instead of claiming a status. Refreshed every time this
-  // screen is focused, so returning from system settings updates it.
+  // Permissions row: shows the REAL status of all four, never a
+  // claimed one. Camera and Photos status come from the image picker;
+  // Microphone and Files from the OS check on Android. Refreshed every
+  // time this screen is focused.
   const refreshPermissions = useCallback(async () => {
     try {
       const cam = await ImagePicker.getCameraPermissionsAsync();
-      const camLabel = cam.status === 'granted' ? 'granted' : cam.status === 'denied' ? 'denied' : 'not set';
-      let micLabel = 'check in system settings';
+      const photos = await ImagePicker.getMediaLibraryPermissionsAsync();
+      const label = (s: string) => s === 'granted' ? 'granted' : s === 'denied' ? 'denied' : 'not set';
+      let micLabel = 'not asked';
+      let filesLabel = 'not asked';
       if (Platform.OS === 'android') {
-        micLabel = (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) ? 'granted' : 'not granted';
+        micLabel = (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) ? 'granted' : 'not set';
+        const api = typeof Platform.Version === 'number' ? Platform.Version : 0;
+        const filePerm = api >= 33 ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+        filesLabel = (await PermissionsAndroid.check(filePerm)) ? 'granted' : 'not set';
       }
-      setPermText(`Camera: ${camLabel} · Microphone: ${micLabel}`);
+      setPermText(`Mic: ${micLabel} · Camera: ${label(cam.status)} · Photos: ${label(photos.status)} · Files: ${filesLabel}`);
     } catch {
-      setPermText('Open system settings to review');
+      setPermText('Could not check permissions');
     }
   }, []);
   useFocusEffect(useCallback(() => { refreshPermissions().catch(() => {}); }, [refreshPermissions]));
+
+  // In-app permission flow (user order 2026-10-29): tapping the
+  // Permissions row must NOT open the phone's system settings. It
+  // asks inside the app, one popup at a time, in this order:
+  // Microphone → Camera → Photos → Files. Each popup has Allow and
+  // Deny; Allow triggers that permission's real OS request, Deny
+  // records denied and moves to the next step. The row's status line
+  // updates at the end.
+  const runPermissionFlow = useCallback(() => {
+    const results: Record<string, string> = {};
+    const finish = () => {
+      setPermText(`Mic: ${results.mic} · Camera: ${results.camera} · Photos: ${results.photos} · Files: ${results.files}`);
+    };
+    const requestMic = async (): Promise<string> => {
+      if (Platform.OS !== 'android') return 'not asked';
+      try {
+        const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        return r === 'granted' ? 'granted' : 'denied';
+      } catch { return 'denied'; }
+    };
+    const requestFiles = async (): Promise<string> => {
+      if (Platform.OS !== 'android') return 'not asked';
+      try {
+        const api = typeof Platform.Version === 'number' ? Platform.Version : 0;
+        if (api >= 33) {
+          const r = await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
+          ]);
+          return Object.values(r).some((v) => v === 'granted') ? 'granted' : 'denied';
+        }
+        const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+        return r === 'granted' ? 'granted' : 'denied';
+      } catch { return 'denied'; }
+    };
+    const askFiles = () => {
+      Alert.alert('Files', 'Allow BotSquad to read files you pick?', [
+        { text: 'Deny', style: 'cancel', onPress: () => { results.files = 'denied'; finish(); } },
+        { text: 'Allow', onPress: async () => { results.files = await requestFiles(); finish(); } },
+      ]);
+    };
+    const askPhotos = () => {
+      Alert.alert('Photos', 'Allow BotSquad to use your photos?', [
+        { text: 'Deny', style: 'cancel', onPress: () => { results.photos = 'denied'; askFiles(); } },
+        { text: 'Allow', onPress: async () => { try { const r = await ImagePicker.requestMediaLibraryPermissionsAsync(); results.photos = r.status === 'granted' ? 'granted' : 'denied'; } catch { results.photos = 'denied'; } askFiles(); } },
+      ]);
+    };
+    const askCamera = () => {
+      Alert.alert('Camera', 'Allow BotSquad to use your camera?', [
+        { text: 'Deny', style: 'cancel', onPress: () => { results.camera = 'denied'; askPhotos(); } },
+        { text: 'Allow', onPress: async () => { try { const r = await ImagePicker.requestCameraPermissionsAsync(); results.camera = r.status === 'granted' ? 'granted' : 'denied'; } catch { results.camera = 'denied'; } askPhotos(); } },
+      ]);
+    };
+    Alert.alert('Microphone', 'Allow BotSquad to use your microphone for voice input?', [
+      { text: 'Deny', style: 'cancel', onPress: () => { results.mic = 'denied'; askCamera(); } },
+      { text: 'Allow', onPress: async () => { results.mic = await requestMic(); askCamera(); } },
+    ]);
+  }, []);
 
 
   const colorLabel = COLOR_OPTIONS.find((o) => o.id === colorMode)?.label ?? 'System';
@@ -147,11 +208,19 @@ export default function SettingsScreen() {
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
           </Pressable>
-          <Pressable onPress={() => Linking.openSettings()} style={[styles.menuRow, styles.menuRowDivider]}>
+          <Pressable onPress={runPermissionFlow} style={[styles.menuRow, styles.menuRowDivider]}>
             <Feather name="shield" size={20} color={tokens.textMuted} />
             <View style={{ flex: 1 }}>
               <Text style={styles.menuLabel}>Permissions</Text>
               <Text style={styles.menuDetail}>{permText}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => router.push('/ads-payments' as never)} style={[styles.menuRow, styles.menuRowDivider]}>
+            <Feather name="credit-card" size={20} color={tokens.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Ads & payments</Text>
+              <Text style={styles.menuDetail}>Plans and premium</Text>
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
           </Pressable>

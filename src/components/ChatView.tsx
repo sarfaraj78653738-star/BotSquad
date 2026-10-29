@@ -6,7 +6,7 @@ import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotConnectionIds, listBots, listConnections, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
+import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotConnectionIds, listBots, listConnections, listMcpServers, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
 import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
@@ -18,6 +18,8 @@ import { AGENT_TOOLS_PROMPT, executeAgentTool, parseToolCalls, stripToolBlocks }
 import { connectedServicesPrompt } from '../lib/serviceTools';
 import { buildCrossChatDigest } from '../lib/crossChat';
 import { parseSkillCallout } from '../lib/skillCallout';
+import { mcpPromptBlock, parseMcpCallout } from '../lib/mcpCallout';
+import { listMcpTools } from '../lib/mcp';
 import { ThreadMenu } from './ThreadMenu';
 import { chatWithBot } from '../lib/providers';
 import { errorCode, isRawErrorText } from '../lib/errors';
@@ -253,12 +255,23 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       const callout = parseSkillCallout(text.trim(), await listSkills());
       const enabledSkills = callout.skill ? [{ name: callout.skill.name, template: callout.skill.template }] : [];
       const effectiveText = callout.skill ? callout.cleanText : text.trim();
+      // MCP callout, same model as skills: a server named at the start
+      // of the message applies to this turn only, in every chat. Its
+      // tools are fetched live and appended to the prompt; in Main
+      // Chat the agent loop can then run one with mcp_call.
+      const mcpCallout = parseMcpCallout(effectiveText, await listMcpServers());
+      const mcpEffectiveText = mcpCallout.server ? mcpCallout.cleanText : effectiveText;
+      let mcpBlock = '';
+      if (mcpCallout.server) {
+        const mcpTools = await listMcpTools(mcpCallout.server.id, mcpCallout.server.url).catch(() => []);
+        mcpBlock = mcpPromptBlock(mcpCallout.server.name, mcpTools, universal === true);
+      }
       const profilePrefs = (await getSetting('profile_preferences')) ?? '';
       const connIds = universal ? [] : await listBotConnectionIds(bot.id);
       const enabledConns = connIds.length
         ? (await listConnections()).filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }))
         : [];
-      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, enabledConns);
+      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, enabledConns) + mcpBlock;
       const history = next.slice(-10).map((m) => ({ role: m.role, text: m.text }));
       // Main Chat is an agent, not just a chatbot: it knows the other
       // threads' recent context, and it can work with workspace files
@@ -274,7 +287,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         systemFull += AGENT_TOOLS_PROMPT;
         const svcPrompt = await connectedServicesPrompt().catch(() => '');
         if (svcPrompt) systemFull += svcPrompt;
-        let reply = await chatWithBot(bot, systemFull, history, effectiveText);
+        let reply = await chatWithBot(bot, systemFull, history, mcpEffectiveText);
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
@@ -299,7 +312,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         // without the user approving that exact action.
         for (const action of parseBrowserCommands(finalReply)) browserRef.current?.requestAction(action);
       } else {
-        const reply = await chatWithBot(bot, system, history, effectiveText);
+        const reply = await chatWithBot(bot, system, history, mcpEffectiveText);
         // Bot browser commands in the reply drive the panel. Tap/type
         // actions stop at the panel's approval card; they never run
         // without the user approving that exact action.
@@ -451,7 +464,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           onSend={() => { const t = input; setInput(''); voiceBase.current = ''; void send(t); }}
           onAttachment={handleAttachment}
           onVoicePartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
-          onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote('Voice transcript inserted — check it, then tap Send. Nothing was sent automatically.'); }}
+          onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote(''); }}
           onVoiceError={(m) => { voiceBase.current = ''; setVoiceNote(m); }}
         />
       </View>
