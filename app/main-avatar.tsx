@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { MenuButton } from '../src/components/Drawer';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { AvatarPicker } from '../src/components/AvatarPicker';
 import { MAIN_CHAT_AVATAR_DEFAULT } from '../src/lib/avatars';
 import { getSetting, setSetting } from '../src/lib/db';
@@ -12,6 +13,7 @@ import { useTokens } from '../src/lib/tokens';
 export default function MainAvatarScreen() {
   const tokens = useTokens();
   const styles = getStyles(tokens);
+  const router = useRouter();
   const [avatar, setAvatar] = useState(MAIN_CHAT_AVATAR_DEFAULT);
 
   useEffect(() => {
@@ -21,14 +23,16 @@ export default function MainAvatarScreen() {
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <MenuButton />
+        <Pressable accessibilityLabel="Back to Settings" onPress={() => router.replace('/settings')} style={styles.backRow}>
+          <Feather name="chevron-left" size={22} color={tokens.text} />
+          <Text style={styles.backText}>Settings</Text>
+        </Pressable>
         <Text style={styles.headerTitle}>Main Chat avatar</Text>
-        <View style={{ width: 34 }} />
+        <View style={{ width: 84 }} />
       </View>
       <ScrollView style={styles.body}>
-        <Text style={styles.sub}>Pick the avatar for Main Chat. Each bot has its own pick on its edit screen.</Text>
+        <Text style={styles.sub}>Pick the avatar for Main Chat.</Text>
         <AvatarPicker value={avatar} onChange={async (id) => { setAvatar(id); await setSetting('main_chat_avatar', id); }} />
-        <Text style={styles.note}>Saved at once. Open Main Chat to see it in the header.</Text>
       </ScrollView>
     </View>
   );
@@ -36,9 +40,10 @@ export default function MainAvatarScreen() {
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   body: { flex: 1, padding: tokens.space.md },
+  backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
+  backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
-  note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: tokens.space.md },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.md },
   wrap: { backgroundColor: tokens.bg, flex: 1 },
 });
