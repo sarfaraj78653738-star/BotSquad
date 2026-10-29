@@ -3,33 +3,23 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { getUniversal, setUniversal, UniversalConfig } from '../lib/universal';
-import { listModelSetups, ModelSetup } from '../lib/modelSetups';
+import { listModelSetups, saveModelSetup, ModelSetup } from '../lib/modelSetups';
 import { useTokens } from '../lib/tokens';
 
 // Model pill for the composer bar. Tapping it opens a bottom sheet
-// titled "Select model" listing the models usable with the current
-// provider, current model first, with a checkmark on the current one
-// and one plain, factual line per model. Selecting one changes only
-// the universal model, never the provider. Only the universal model
-// from Settings plus known non-branded provider models are listed;
-// no third-party branded model families are named here.
-const MODELS_BY_PROVIDER: Record<UniversalConfig['provider'], { id: string; description: string }[]> = {
-  'openai-compatible': [
-    { id: 'gpt-4o-mini', description: 'General chat model.' },
-    { id: 'llama-3.3-70b-versatile', description: 'Large open model via the configured endpoint.' },
-    { id: 'deepseek-chat', description: 'General chat model via the configured endpoint.' },
-  ],
-  anthropic: [],
-  gemini: [
-    { id: 'gemini-2.0-flash', description: 'General chat model.' },
-  ],
-};
-
+// titled "Select model". The sheet lists ONLY the user's own models:
+// the current model first, then the models the user saved in Settings.
+// No model is provided from the app side (user order 2026-10-29: the
+// built-in gpt/llama/deepseek/gemini rows are removed, because tapping
+// one overwrote the user's own model). Selecting a saved setup
+// switches provider + endpoint + context window with it. Before any
+// switch, the current setup is saved first, so switching can never
+// lose a model.
 export function ModelPicker() {
   const tokens = useTokens();
   const insets = useSafeAreaInsets();
   const styles = getStyles(tokens);
-  const [model, setModel] = useState('gpt-4o-mini');
+  const [model, setModel] = useState('');
   const [provider, setProvider] = useState<UniversalConfig['provider']>('openai-compatible');
   const [saved, setSaved] = useState<ModelSetup[]>([]);
   const [open, setOpen] = useState(false);
@@ -46,9 +36,8 @@ export function ModelPicker() {
   useEffect(() => { refresh().catch(() => {}); }, []);
 
   // Current model first, then the user's saved setups (each one switches
-  // provider + endpoint + context window with it, not just the name),
-  // then the built-in provider models. Saved setups are what make the
-  // "add more models" flow in Settings usable from a chat.
+  // provider + endpoint + context window with it, not just the name).
+  // No built-in models are listed: only what the user saved in Settings.
   // The current model is already listed first, so a saved setup for that
   // same model + provider is skipped here to avoid a duplicate row; the
   // current row keeps it active with its provider and endpoint intact.
@@ -64,9 +53,6 @@ export function ModelPicker() {
   const models = [
     { key: `current|${model}`, id: model, provider, description: 'Current model.', apply: () => setUniversal({ model }) },
     ...savedEntries,
-    ...MODELS_BY_PROVIDER[provider].map((m) => ({
-      key: `${provider}|${m.id}`, id: m.id, provider, description: m.description, apply: () => setUniversal({ model: m.id }),
-    })),
   ].filter((m, i, arr) => arr.findIndex((x) => x.key === m.key) === i);
 
   return (
@@ -92,7 +78,18 @@ export function ModelPicker() {
           {models.map((m) => (
             <Pressable
               key={m.key}
-              onPress={async () => { await m.apply(); setModel(m.id); setProvider(m.provider); setOpen(false); }}
+              onPress={async () => {
+                // Never lose the model being switched away from: save
+                // the current setup first (deduped by provider + model +
+                // endpoint, so re-tapping the same model adds no row).
+                // This is the bug the user hit on the old build, where
+                // switching in this sheet overwrote the only copy of
+                // the previous model and it could only be retyped.
+                // Tapping the already-current row just re-saves it.
+                const current = await getUniversal();
+                await saveModelSetup({ provider: current.provider, model: current.model, endpoint: current.endpoint, contextWindow: current.contextWindow });
+                await m.apply(); setModel(m.id); setProvider(m.provider); setOpen(false);
+              }}
               style={styles.row}
             >
               <View style={{ flex: 1 }}>
