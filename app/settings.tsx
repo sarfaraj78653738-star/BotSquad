@@ -7,7 +7,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Button, Card, Field } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import { getApiKey, setApiKey } from '../src/lib/keys';
-import { getUniversal, setUniversal, UniversalConfig } from '../src/lib/universal';
+import { getUniversal, parseContextWindow, setUniversal, UniversalConfig } from '../src/lib/universal';
 import { deleteModelSetup, listModelSetups, saveModelSetup, ModelSetup } from '../src/lib/modelSetups';
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
 import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../src/lib/tokens';
@@ -162,8 +162,8 @@ export default function SettingsScreen() {
     // and rejected there, surfacing only as a bare error number in chat.
     // Reject it at save time with a usable hint instead.
     if (/\s/.test(trimmedModel)) { setMsg('Enter the exact API model ID, with no spaces (for example thinkingmachines/inkling:free), not the display name.'); return; }
-    const parsedWindow = parseInt(contextWindow, 10);
-    if (!Number.isFinite(parsedWindow)) { setMsg('Context window must be a number.'); return; }
+    const parsedWindow = parseContextWindow(contextWindow);
+    if (parsedWindow === null) { setMsg('Context window must be a number, or shorthand like 256k, 546k, or 1M.'); return; }
     const trimmedEndpoint = endpoint.trim();
     if (provider === 'openai-compatible' && trimmedEndpoint && !/^https:\/\/[^/?#\s]+(\/[^?#\s]*)?$/.test(trimmedEndpoint)) {
       setMsg('Endpoint must be an https:// URL with no query string, or blank for OpenAI.'); return;
@@ -306,15 +306,16 @@ export default function SettingsScreen() {
             />
             <TextInput
               accessibilityLabel="Context window"
-              keyboardType="number-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
               onChangeText={setContextWindow}
-              placeholder="Context"
+              placeholder="e.g. 256k, 1M"
               placeholderTextColor={tokens.textMuted}
               style={[styles.input, styles.contextInput]}
               value={contextWindow}
             />
           </View>
-          <Text style={styles.sub}>Max tokens, as a number.</Text>
+          <Text style={styles.sub}>Context window — type 256k, 546k, 1M, or a plain number.</Text>
           <Button title="Save" onPress={save} />
         </Card>
         {msg ? <Card><Text>{msg}</Text></Card> : null}

@@ -14,6 +14,25 @@ function clampContextWindow(value: number): number {
   return Math.min(1000000, Math.max(1024, Math.floor(value)));
 }
 
+// Context-window shorthand (user order 2026-10-29): the Settings field
+// accepts what a person would type — "256k", "546k", "1M", "1.5M" —
+// as well as a plain number like "26500". Returns null when the input
+// is not parseable, so the form can show a usable error instead of
+// silently saving a wrong window. The stored value stays a plain
+// number; getUniversal clamps it to 1024–1,000,000 on read.
+export function parseContextWindow(input: string): number | null {
+  const cleaned = input.trim().toLowerCase().replace(/,/g, '').replace(/\s+/g, '');
+  if (!cleaned) return null;
+  let multiplier = 1;
+  let digits = cleaned;
+  if (cleaned.endsWith('k')) { multiplier = 1000; digits = cleaned.slice(0, -1); }
+  else if (cleaned.endsWith('m')) { multiplier = 1000000; digits = cleaned.slice(0, -1); }
+  if (!/^\d+(\.\d+)?$/.test(digits)) return null;
+  const value = parseFloat(digits) * multiplier;
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.floor(value);
+}
+
 export async function getUniversal(): Promise<UniversalConfig> {
   const providerRaw = await getSetting('universal_provider');
   const provider = (PROVIDERS as readonly string[]).includes(providerRaw ?? '')
