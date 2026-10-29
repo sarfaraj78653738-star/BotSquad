@@ -13,7 +13,7 @@ import { MenuButton } from '../src/components/Drawer';
 import { ComposerBar } from '../src/components/ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from '../src/components/LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../src/lib/liveBrowser';
-import { createGroupThread, deleteGroupThread, getPinnedThreads, listBots, listGroupMembers, listGroupMessages, listGroupThreads, renameGroupThread, setGroupMessageApproval, togglePinThread } from '../src/lib/db';
+import { createGroupThread, deleteGroupThread, getPinnedThreads, listBots, listGroupMembers, listGroupMessages, listGroupThreads, renameGroupThread, togglePinThread } from '../src/lib/db';
 import { runGroupMessage } from '../src/lib/group';
 import { isRawErrorText } from '../src/lib/errors';
 import { saveArtifactFromReply } from '../src/lib/projects';
@@ -156,6 +156,16 @@ export default function GroupScreen() {
             </Pressable>
             {messages.length > 0 ? (
               <Pressable
+                accessibilityLabel="Export chat as ZIP"
+                accessibilityRole="button"
+                onPress={async () => { try { await exportChatZip(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))); } catch { Alert.alert('Export failed', 'The ZIP could not be created. Try again.'); } }}
+                style={styles.menuButton}
+              >
+                <Feather name="file-text" size={20} color={tokens.text} />
+              </Pressable>
+            ) : null}
+            {messages.length > 0 ? (
+              <Pressable
                 accessibilityLabel="Group chat menu"
                 accessibilityRole="button"
                 onPress={async () => { setMenuPinned((await getPinnedThreads().catch(() => [] as string[])).includes(selected.id)); setMenuOpen(true); }}
@@ -254,7 +264,10 @@ export default function GroupScreen() {
               }
               return (
                 <View style={styles.assistantRow}>
-                  <Text style={styles.botLabel}>{item.role === 'system_note' && !item.botId ? 'Note' : memberName(item.botId)}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
+                  <View style={styles.botHead}>
+                    {item.botId ? <BotAvatar variant={avatarFor(item.botId, members.find((m) => m.id === item.botId)?.avatar)} size={28} /> : null}
+                    <Text style={styles.botLabel}>{item.role === 'system_note' && !item.botId ? 'Note' : memberName(item.botId)}</Text>
+                  </View>
                   <Text style={styles.assistantText}>{item.text}</Text>
                   {item.role === 'assistant' && (
                     <Pressable
@@ -263,12 +276,6 @@ export default function GroupScreen() {
                     >
                       <Text style={styles.saveArtifact}>Save as artifact</Text>
                     </Pressable>
-                  )}
-                  {item.role === 'assistant' && item.approvalState === 'draft' && (
-                    <View style={styles.actions}>
-                      <Button title="Approve draft" onPress={async () => { await setGroupMessageApproval(item.id, 'approved'); setMessages(await listGroupMessages(selected.id)); }} />
-                      <Button title="Reject" variant="secondary" onPress={async () => { await setGroupMessageApproval(item.id, 'rejected'); setMessages(await listGroupMessages(selected.id)); }} />
-                    </View>
                   )}
                 </View>
               );
@@ -307,11 +314,11 @@ export default function GroupScreen() {
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
-  actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   body: { flex: 1, padding: tokens.space.md },
-  botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
+  botHead: { alignItems: 'center', flexDirection: 'row', gap: 8, marginBottom: 4 },
+  botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   failedRow: { alignItems: 'center', borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
   failedText: { color: tokens.danger, fontSize: tokens.font.md, fontWeight: '700' },
   retryButton: { backgroundColor: tokens.accent, borderRadius: tokens.radius.md, paddingHorizontal: 16, paddingVertical: 8 },

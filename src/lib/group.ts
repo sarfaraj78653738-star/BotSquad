@@ -47,7 +47,9 @@ export async function runGroupMessage(
       const enabledSkills = (await listSkills()).filter((s) => enabledIds.includes(s.id));
       const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs);
       const reply = await chatWithBot(bot, system, history, userText.trim());
-      const msg: GroupMessage = { id: newId(), threadId, botId: bot.id, role: 'assistant', text: reply, approvalState: 'draft', createdAt: nowIso() };
+      // A reply is delivered content, not a draft (same as Main/Bot
+      // chats): no approval gate, no "(draft)" label.
+      const msg: GroupMessage = { id: newId(), threadId, botId: bot.id, role: 'assistant', text: reply, approvalState: null, createdAt: nowIso() };
       await addGroupMessage(msg);
       successful.push({ bot, reply });
     } catch (e) {

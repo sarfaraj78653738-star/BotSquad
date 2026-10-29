@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { AdSlot, Button, LoadingRow } from './ui';
+import { AdSlot, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotSkillIds, listBots, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setMessageApproval, setUniversalTitle, togglePinThread } from '../lib/db';
+import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotSkillIds, listBots, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
 import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
@@ -197,11 +197,12 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
 
   // Header actions, gated on the thread having messages: a fresh empty
   // chat shows none of them. Main Chat gets Export + New chat + menu;
-  // a bot chat gets only the menu (its screen already owns "+ New").
+  // a bot chat gets Export + menu (its screen already owns "+ New",
+  // which creates a new bot, not a new chat).
   const hasMessages = messages.length > 0;
   const headerActions = hasMessages ? (
     <View style={styles.headerActions}>
-      {universal ? headerIconButton('file-text', 'Export chat as ZIP', () => { void handleExportZip(); }) : null}
+      {headerIconButton('file-text', 'Export chat as ZIP', () => { void handleExportZip(); })}
       {universal ? headerIconButton('plus', 'Start a new chat', () => { void newChat(); }) : null}
       {headerIconButton('more-vertical', 'Chat menu', () => { void openMenu(); })}
     </View>
@@ -244,7 +245,13 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       // actions stop at the panel's approval card; they never run
       // without the user approving that exact action.
       for (const action of parseBrowserCommands(reply)) browserRef.current?.requestAction(action);
-      const assistantMsg: Message = { id: newId(), chatId, botId: bot.id, role: 'assistant', text: reply, approvalState: 'draft', createdAt: nowIso() };
+      // A reply is delivered content, not a draft: no approval gate.
+      // (Earlier builds saved every reply as approvalState 'draft' and
+      // showed Approve/Reject under it; that gate did nothing, since
+      // the app never sends anything externally, and it only made
+      // replies look broken. Replies are final on arrival; "Save as
+      // artifact" is the explicit save action.)
+      const assistantMsg: Message = { id: newId(), chatId, botId: bot.id, role: 'assistant', text: reply, approvalState: null, createdAt: nowIso() };
       await addMessage(assistantMsg);
       setMessages([...next, assistantMsg]);
       const note = extractMemoryNote(text, reply);
@@ -319,7 +326,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           }
           return (
             <View style={styles.assistantRow}>
-              <Text style={styles.botLabel}>{bot.name}{item.approvalState ? ` (${item.approvalState})` : ''}</Text>
+              <Text style={styles.botLabel}>{bot.name}</Text>
               <Text style={styles.assistantText}>{item.text}</Text>
               <View style={styles.msgActions}>
                 <Pressable
@@ -329,12 +336,6 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
                   <Text style={styles.saveArtifact}>Save as artifact</Text>
                 </Pressable>
               </View>
-              {item.approvalState === 'draft' && (
-                <View style={styles.approval}>
-                  <Button title="Approve draft" onPress={async () => { await setMessageApproval(item.id, 'approved'); setMessages(await listMessages(chatId)); }} />
-                  <Button title="Reject" variant="secondary" onPress={async () => { await setMessageApproval(item.id, 'rejected'); setMessages(await listMessages(chatId)); }} />
-                </View>
-              )}
             </View>
           );
         }}
@@ -387,7 +388,6 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
-  approval: { flexDirection: 'row', gap: 10, marginTop: 12 },
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },

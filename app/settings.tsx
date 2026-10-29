@@ -5,9 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Button, Card, Field } from '../src/components/ui';
-import { AvatarPicker } from '../src/components/AvatarPicker';
-import { MAIN_CHAT_AVATAR_DEFAULT } from '../src/lib/avatars';
-import { getSetting, setSetting } from '../src/lib/db';
 import { MenuButton } from '../src/components/Drawer';
 import { getApiKey, setApiKey } from '../src/lib/keys';
 import { getUniversal, setUniversal, UniversalConfig } from '../src/lib/universal';
@@ -31,6 +28,7 @@ const PRIVACY = `BotSquad Privacy — GitHub v1 (to be reviewed before any store
 // memory-from-chats toggle — TeamBots has none of those), no
 // Notifications toggle (no notification system), no Time & focus.
 const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
+  { label: 'Main Chat avatar', detail: 'Pick Main Chat\'s avatar', icon: 'smile', route: '/main-avatar' },
   { label: 'Connections', detail: 'Add and enable connections', icon: 'layers', route: '/connect' },
   { label: 'Skills', detail: 'Instruction templates', icon: 'zap', route: '/skills' },
   { label: 'Plugins', detail: 'Installed plugin definitions', icon: 'package', route: '/plugins' },
@@ -108,7 +106,6 @@ export default function SettingsScreen() {
   const [msg, setMsg] = useState('');
   const [savedSetups, setSavedSetups] = useState<ModelSetup[]>([]);
   const [active, setActive] = useState<UniversalConfig | null>(null);
-  const [mainAvatar, setMainAvatar] = useState(MAIN_CHAT_AVATAR_DEFAULT);
 
   const refreshSaved = useCallback(async () => {
     try {
@@ -126,8 +123,6 @@ export default function SettingsScreen() {
       setModel(u.model);
       setContextWindow(String(u.contextWindow));
       setApiKeyState((await getApiKey(u.provider)) ?? '');
-      const savedAvatar = await getSetting('main_chat_avatar').catch(() => null);
-      if (savedAvatar) setMainAvatar(savedAvatar);
     })().catch(() => {});
     refreshSaved().catch(() => {});
   }, [refreshSaved]);
@@ -323,11 +318,6 @@ export default function SettingsScreen() {
           <Button title="Save" onPress={save} />
         </Card>
         {msg ? <Card><Text>{msg}</Text></Card> : null}
-        <Text style={styles.sectionTitle}>Main Chat avatar</Text>
-        <Text style={styles.sub}>Pick the avatar for Main Chat. Each bot has its own pick on its edit screen.</Text>
-        <Card>
-          <AvatarPicker value={mainAvatar} onChange={async (id) => { setMainAvatar(id); await setSetting('main_chat_avatar', id); }} />
-        </Card>
         <Text style={styles.sectionTitle}>Saved models</Text>
         <Card>
           {savedSetups.length === 0 ? (
