@@ -30,6 +30,7 @@ const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof F
   { label: 'GitHub install', detail: 'Install skills, plugins, MCP servers', icon: 'github', route: '/github-install' },
   { label: 'Routines', detail: 'Scheduled skills and routines', icon: 'clock', route: '/routines' },
   { label: 'Legal', detail: 'Privacy, terms, ads, refunds & feedback', icon: 'shield', route: '/legal' },
+  { label: 'Ads & payments', detail: 'Plans and premium', icon: 'credit-card', route: '/ads-payments' },
 ];
 
 type Provider = UniversalConfig['provider'];
