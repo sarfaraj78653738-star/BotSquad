@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Linking, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Button, Card, Field } from '../src/components/ui';
+import { Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
-import { getApiKey, setApiKey } from '../src/lib/keys';
-import { getUniversal, parseContextWindow, setUniversal, UniversalConfig } from '../src/lib/universal';
-import { deleteModelSetup, listModelSetups, saveModelSetup, ModelSetup } from '../src/lib/modelSetups';
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
 import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../src/lib/tokens';
 
 // Settings is the hub, laid out as clean grouped rows (icon, title,
 // short subtitle). Group 1 is the person + device: Profile, Color mode,
-// Font style, Permissions. Group 2 is the tool pages — Connections,
+// Font style, Permissions. Group 2 is the tool pages — Model setup, Connections,
 // Skills, Plugins, MCP servers, GitHub install, Routines.
 // Nothing stacks all of them on one page. Deliberately NOT here: no
 // Sharing section, no Voice section, no Upgrade/Billing, no
@@ -22,6 +19,7 @@ import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../
 // memory-from-chats toggle — TeamBots has none of those), no
 // Notifications toggle (no notification system), no Time & focus.
 const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
+  { label: 'Model setup', detail: 'Providers, keys, and saved models', icon: 'cpu', route: '/model-setup' },
   { label: 'Main Chat avatar', detail: 'Pick Main Chat\'s avatar', icon: 'smile', route: '/main-avatar' },
   { label: 'Connections', detail: 'Add and enable connections', icon: 'layers', route: '/connect' },
   { label: 'Skills', detail: 'Instruction templates', icon: 'zap', route: '/skills' },
@@ -31,13 +29,6 @@ const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof F
   { label: 'Routines', detail: 'Scheduled skills and routines', icon: 'clock', route: '/routines' },
   { label: 'Legal', detail: 'Privacy, terms, ads, refunds & feedback', icon: 'shield', route: '/legal' },
   { label: 'Ads & payments', detail: 'Plans and premium', icon: 'credit-card', route: '/ads-payments' },
-];
-
-type Provider = UniversalConfig['provider'];
-const PROVIDER_LABELS: { id: Provider; label: string }[] = [
-  { id: 'openai-compatible', label: 'OpenAI-compatible' },
-  { id: 'anthropic', label: 'Anthropic' },
-  { id: 'gemini', label: 'Gemini' },
 ];
 
 const COLOR_OPTIONS: { id: ColorMode; label: string; detail: string }[] = [
@@ -94,34 +85,7 @@ export default function SettingsScreen() {
   const [fontStyle, setFontStyle] = useFontStyle();
   const [picker, setPicker] = useState<'color' | 'font' | null>(null);
   const [permText, setPermText] = useState('Open system settings to review');
-  const [provider, setProvider] = useState<Provider>('openai-compatible');
-  const [apiKey, setApiKeyState] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [model, setModel] = useState('');
-  const [contextWindow, setContextWindow] = useState('8192');
-  const [msg, setMsg] = useState('');
-  const [savedSetups, setSavedSetups] = useState<ModelSetup[]>([]);
-  const [active, setActive] = useState<UniversalConfig | null>(null);
 
-  const refreshSaved = useCallback(async () => {
-    try {
-      const [setups, u] = await Promise.all([listModelSetups(), getUniversal()]);
-      setSavedSetups(setups);
-      setActive(u);
-    } catch { /* list stays as it was */ }
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      const u = await getUniversal();
-      setProvider(u.provider);
-      setEndpoint(u.endpoint);
-      setModel(u.model);
-      setContextWindow(String(u.contextWindow));
-      setApiKeyState((await getApiKey(u.provider)) ?? '');
-    })().catch(() => {});
-    refreshSaved().catch(() => {});
-  }, [refreshSaved]);
 
   // Permissions row: shows the REAL status, never a claimed one. Camera
   // status comes from the image picker (a status check, not a prompt);
@@ -144,77 +108,6 @@ export default function SettingsScreen() {
   }, []);
   useFocusEffect(useCallback(() => { refreshPermissions().catch(() => {}); }, [refreshPermissions]));
 
-  async function changeProvider(p: Provider) {
-    setProvider(p);
-    // Each provider has its own key in secure storage; show that one.
-    setApiKeyState((await getApiKey(p)) ?? '');
-  }
-
-  async function save() {
-    const trimmedModel = model.trim();
-    if (!trimmedModel) { setMsg('Enter a model name.'); return; }
-    // A model ID never contains a space: a display name typed here (for
-    // example "Inkling Small (free)") is sent verbatim to the provider
-    // and rejected there, surfacing only as a bare error number in chat.
-    // Reject it at save time with a usable hint instead.
-    if (/\s/.test(trimmedModel)) { setMsg('Enter the exact API model ID, with no spaces (for example thinkingmachines/inkling:free), not the display name.'); return; }
-    const parsedWindow = parseContextWindow(contextWindow);
-    if (parsedWindow === null) { setMsg('Context window must be a number, or shorthand like 256k, 546k, or 1M.'); return; }
-    const trimmedEndpoint = endpoint.trim();
-    if (provider === 'openai-compatible' && trimmedEndpoint && !/^https:\/\/[^/?#\s]+(\/[^?#\s]*)?$/.test(trimmedEndpoint)) {
-      setMsg('Endpoint must be an https:// URL with no query string, or blank for OpenAI.'); return;
-    }
-    await setApiKey(provider, apiKey);
-    // The endpoint is only ever used for openai-compatible (see providers.ts),
-    // but it is preserved across provider switches so switching back does not lose it.
-    await setUniversal({ provider, model: trimmedModel, endpoint: trimmedEndpoint, contextWindow: parsedWindow });
-    // The just-saved setup joins the list below, and it is the active one.
-    // No success note is shown under the form anymore: the new row in the
-    // list below is the confirmation that the save worked.
-    await saveModelSetup({ provider, model: trimmedModel, endpoint: trimmedEndpoint, contextWindow: parsedWindow });
-    setMsg('');
-    // Empty the form so the next model can be added straight away. The
-    // saved key stays in secure storage (clearing the field does not
-    // delete it); only a later Save with an empty key field would.
-    setProvider('openai-compatible');
-    setApiKeyState('');
-    setEndpoint('');
-    setModel('');
-    setContextWindow('8192');
-    await refreshSaved();
-  }
-
-  // Activate a saved setup: it becomes the one every chat uses, and its
-  // values are loaded back into the form so they can be seen or edited.
-  async function useSetup(s: ModelSetup) {
-    await setUniversal({ provider: s.provider, model: s.model, endpoint: s.endpoint, contextWindow: s.contextWindow });
-    setProvider(s.provider);
-    setEndpoint(s.endpoint);
-    setModel(s.model);
-    setContextWindow(String(s.contextWindow));
-    setApiKeyState((await getApiKey(s.provider)) ?? '');
-    setMsg('');
-    await refreshSaved();
-  }
-
-  function deleteSetup(s: ModelSetup) {
-    Alert.alert('Delete saved model?', `${s.model} will be removed from the list below.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          // The active chat config is left untouched: deleting a row only
-          // removes it from the list, it does not switch the active model.
-          await deleteModelSetup(s.id);
-          await refreshSaved();
-        },
-      },
-    ]);
-  }
-
-  // Ads + payments are deferred (GitHub v1). There is intentionally no
-  // purchase button in this version: a button that granted premium with
-  // no payment would be a fake-purchase path. See src/lib/ads.ts.
 
   const colorLabel = COLOR_OPTIONS.find((o) => o.id === colorMode)?.label ?? 'System';
   const fontLabel = FONT_OPTIONS.find((o) => o.id === fontStyle)?.label ?? 'Default';
@@ -274,77 +167,6 @@ export default function SettingsScreen() {
               <Feather name="chevron-right" size={20} color={tokens.textMuted} />
             </Pressable>
           ))}
-        </Card>
-        <Text style={styles.sectionTitle}>Model setup</Text>
-        <Text style={styles.sub}>Save as many models as you like. The active one is used in every chat. Keys stay in secure storage only.</Text>
-        <Card>
-          <Text style={styles.bold}>Provider</Text>
-          <View style={styles.chipRow}>
-            {PROVIDER_LABELS.map((p) => (
-              <Pressable key={p.id} onPress={() => changeProvider(p.id)} style={[styles.chip, provider === p.id && styles.chipActive]}>
-                <Text style={[styles.chipText, provider === p.id && styles.chipTextActive]}>{p.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Field label="API key" secure onChangeText={setApiKeyState} value={apiKey} />
-          {provider === 'openai-compatible' && (
-            <Field label="API endpoint (blank = OpenAI)" onChangeText={setEndpoint} placeholder="https://api.openai.com/v1/chat/completions" value={endpoint} />
-          )}
-          <View style={styles.modelRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.bold}>Model</Text>
-              <TextInput
-                accessibilityLabel="Model name"
-                onChangeText={setModel}
-                placeholder="Model ID from your provider"
-                placeholderTextColor={tokens.textMuted}
-                style={styles.input}
-                value={model}
-              />
-            </View>
-            <View>
-              <Text style={styles.bold}>Context</Text>
-              <TextInput
-                accessibilityLabel="Context window"
-                autoCapitalize="none"
-                autoCorrect={false}
-                onChangeText={setContextWindow}
-                placeholder="e.g. 256k, 1M"
-                placeholderTextColor={tokens.textMuted}
-                style={[styles.input, styles.contextInput]}
-                value={contextWindow}
-              />
-            </View>
-          </View>
-          <Button title="Save" onPress={save} />
-        </Card>
-        {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
-        <Text style={styles.sectionTitle}>Saved models</Text>
-        <Card>
-          {savedSetups.length === 0 ? (
-            <Text style={styles.sub}>No saved models yet. Save one above and it will appear here.</Text>
-          ) : savedSetups.map((s, i) => {
-            const isActive = active !== null && active.provider === s.provider && active.model === s.model && active.endpoint === s.endpoint;
-            const providerLabel = PROVIDER_LABELS.find((p) => p.id === s.provider)?.label ?? s.provider;
-            return (
-              <View key={s.id} style={[styles.savedRow, i > 0 && styles.menuRowDivider]}>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.savedHead}>
-                    <Text style={styles.menuLabel}>{s.model}</Text>
-                    {isActive ? <Text style={styles.activeBadge}>Active</Text> : null}
-                  </View>
-                  <Text style={styles.menuDetail}>{providerLabel}{s.endpoint ? ` · ${s.endpoint}` : ' · Default endpoint'} · Context {s.contextWindow}</Text>
-                  <Text style={styles.menuDetail}>Key: stored in secure storage, never shown here.</Text>
-                </View>
-                <Pressable onPress={() => useSetup(s)} style={styles.smallButton}>
-                  <Text style={styles.smallButtonText}>Use</Text>
-                </Pressable>
-                <Pressable onPress={() => deleteSetup(s)} style={styles.smallButton}>
-                  <Text style={styles.smallButtonText}>Delete</Text>
-                </Pressable>
-              </View>
-            );
-          })}
         </Card>
       </ScrollView>
       <OptionSheet
