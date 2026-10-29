@@ -15,6 +15,7 @@ import { buildTranscript, exportChatZip } from '../lib/chatExport';
 import { linkChatToProject } from '../lib/projects';
 import { addChatToHome, shortcutUri } from '../lib/shortcut';
 import { AGENT_TOOLS_PROMPT, executeAgentTool, parseToolCalls, stripToolBlocks } from '../lib/agent';
+import { connectedServicesPrompt } from '../lib/serviceTools';
 import { buildCrossChatDigest } from '../lib/crossChat';
 import { parseSkillCallout } from '../lib/skillCallout';
 import { ThreadMenu } from './ThreadMenu';
@@ -271,6 +272,8 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         const digest = await buildCrossChatDigest(chatId).catch(() => '');
         if (digest) systemFull += `\n\n[OTHER CHATS CONTEXT — recent messages from this phone's other threads, so questions about them can be answered. Never reveal a thread's contents unless the user asks about that thread.]\n${digest}`;
         systemFull += AGENT_TOOLS_PROMPT;
+        const svcPrompt = await connectedServicesPrompt().catch(() => '');
+        if (svcPrompt) systemFull += svcPrompt;
         let reply = await chatWithBot(bot, systemFull, history, effectiveText);
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];

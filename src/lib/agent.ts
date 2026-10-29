@@ -1,13 +1,16 @@
 import { fetchPublicPageText } from './providers';
 import { deleteWorkspaceFile, listWorkspaceFiles, readWorkspaceFile, safeWorkspacePath, writeWorkspaceFile } from './workspace';
+import { serviceRequest, vercelDeploy } from './serviceTools';
 
 // Agent tools for Main Chat (user order 2026-10-29): the app is not
 // just a chatbot anymore — Main Chat can work with files, search its
-// workspace, read public web pages, and drive the in-chat browser
-// panel (via the existing [BROWSER] commands in its replies). It stays
-// a chatbot too: tools run only when the model emits a tool block for
-// a real task; a plain question still gets a plain reply, with no
-// tool use at all.
+// workspace, read public web pages, drive the in-chat browser panel
+// (via the existing [BROWSER] commands in its replies), and now work
+// on CONNECTED services: service_request calls any endpoint of any
+// verified connection, and vercel_deploy publishes workspace files
+// live. It stays a chatbot too: tools run only when the model emits a
+// tool block for a real task; a plain question still gets a plain
+// reply, with no tool use at all.
 // Hard limits, stated plainly: the phone cannot run terminal commands,
 // servers, tests, or git, so there is no "run" tool — the agent writes
 // code, the user previews pages on the phone and exports the rest.
@@ -28,7 +31,9 @@ Available tools:
 - edit_file {path, old_text, new_text}: replace the first occurrence of old_text in a workspace file. Runs ONLY after the user approves that exact change.
 - delete_file {path}: delete a workspace file. Runs ONLY after the user approves it.
 - browser_read {url}: read a PUBLIC web page as text. Never for logins, paywalls, or CAPTCHAs — those always go to the user.
-Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, tests, or git on this phone — say so plainly if asked, and offer the workspace export instead.
+- service_request {service, method, path, body?}: call a CONNECTED service's own API. service is the service name from [CONNECTED SERVICES] (the prompt lists what is actually connected — never call a service that is not listed). method is GET, POST, PUT, PATCH, or DELETE. path is a relative API path only, like "/user/repos" — never a full URL. body is a JSON string for non-GET calls. GET calls run straight away; any other method runs ONLY after the user approves that exact call in chat. Examples: GitHub list repos GET "/user/repos"; Slack send POST "/chat.postMessage" {"channel":"#general","text":"hi"}; Telegram send POST "/sendMessage" {"chat_id":"123","text":"hi"}; Trello create card POST "/cards" {"name":"Buy milk","idList":"abc"}; Todoist create task POST "/tasks" {"content":"Buy milk"}; WhatsApp send POST "/{phoneId}/messages" {"messaging_product":"whatsapp","to":"919999999999","type":"text","text":{"body":"hi"}} — {phoneId} is filled from the connection, never invent it. You never see any key or token: never ask for one, never print one, never put one in a path or body.
+- vercel_deploy {files, project?}: publish workspace files as a live production site on Vercel (the "make my website live" tool). files is a list of workspace paths, like ["index.html", "style.css"]. Runs ONLY after the user approves the deploy, and only when Vercel is connected. Returns the live URL.
+Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export, any live URL). You cannot run commands, servers, tests, or git on this phone — say so plainly if asked, and offer the workspace export instead. For a connected service you do not know the API for, try its standard REST path; if the service returns an error, report it plainly instead of guessing another call.
 `;
 
 export function parseToolCalls(reply: string): AgentToolCall[] {
@@ -134,7 +139,36 @@ export async function executeAgentTool(
         return 'Error: could not read that page (public pages only; no login, paywall, or CAPTCHA).';
       }
     }
+    case 'service_request': {
+      const service = argString(call.args, 'service');
+      const method = argString(call.args, 'method') || 'GET';
+      const path = argString(call.args, 'path');
+      const rawBody = call.args.body;
+      const body = typeof rawBody === 'string' ? rawBody : rawBody ? JSON.stringify(rawBody) : undefined;
+      if (!service || !path) return 'Error: service_request needs service and path.';
+      // Reads run straight away; anything that sends, creates, or
+      // changes data on a service pauses for the user's approval,
+      // exactly like file writes.
+      if (method.toUpperCase() !== 'GET') {
+        const ok = await approve(`Send to ${service}: ${method.toUpperCase()} ${path}`, (body ?? '').slice(0, 800) || 'No body.');
+        if (!ok) return 'Rejected by user.';
+      }
+      return serviceRequest(service, method, path, body);
+    }
+    case 'vercel_deploy': {
+      const rawFiles = call.args.files;
+      const files = Array.isArray(rawFiles)
+        ? rawFiles.filter((f): f is string => typeof f === 'string')
+        : typeof rawFiles === 'string'
+          ? rawFiles.split(/[,\n]/).map((f) => f.trim()).filter(Boolean)
+          : [];
+      const project = argString(call.args, 'project');
+      if (!files.length) return 'Error: vercel_deploy needs files (workspace paths).';
+      const ok = await approve('Deploy to Vercel', `Files: ${files.join(', ')}\nThis publishes the site live at a public URL.`);
+      if (!ok) return 'Rejected by user.';
+      return vercelDeploy(files, project || undefined);
+    }
     default:
-      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read.`;
+      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read, service_request, vercel_deploy.`;
   }
 }
