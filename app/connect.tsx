@@ -5,7 +5,8 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
 import { deleteConnection, listBotConnectionIds, listBots, listConnections, saveConnection, toggleBotConnection } from '../src/lib/db';
 import { deleteConnectionToken, getConnectionToken, setConnectionToken } from '../src/lib/connections';
-import { CONNECTION_CATALOG, catalogFor, CatalogService } from '../src/lib/connectionCatalog';
+import { CONNECTION_CATALOG, CONNECTION_CATEGORIES, catalogFor, CatalogService } from '../src/lib/connectionCatalog';
+import { verifyConnection } from '../src/lib/connectionVerify';
 import { Bot, Connection, newId, nowIso } from '../src/lib/types';
 import { useTokens } from '../src/lib/tokens';
 
@@ -39,7 +40,9 @@ export default function ConnectScreen() {
   // Add form
   const [addName, setAddName] = useState('');
   const [addService, setAddService] = useState('');
-  const [addToken, setAddToken] = useState('');
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [connecting, setConnecting] = useState(false);
+  const [addError, setAddError] = useState('');
 
   // Detail state
   const [detailHasKey, setDetailHasKey] = useState(false);
@@ -66,18 +69,44 @@ export default function ConnectScreen() {
   function openAdd(service: CatalogService | null) {
     setAddName(service ? service.service : '');
     setAddService(service ? service.service : '');
-    setAddToken('');
+    const initial: Record<string, string> = {};
+    if (service) for (const f of service.fields) if (f.defaultValue) initial[f.key] = f.defaultValue;
+    setFieldValues(initial);
+    setAddError('');
     setView({ kind: 'add', service });
   }
 
-  async function saveAdd() {
-    const name = addName.trim();
-    const service = addService.trim();
+  async function doConnect() {
+    const name = addName.trim() || (view.kind === 'add' && view.service ? view.service.service : '');
+    const service = view.kind === 'add' && view.service ? view.service.service : addService.trim();
     if (!name || !service) { Alert.alert('Missing fields', 'A connection needs a name and a service.'); return; }
+    const fields = view.kind === 'add' && view.service ? view.service.fields : [{ key: 'token', label: 'API key / token', secure: true }];
+    for (const f of fields) {
+      if (!(fieldValues[f.key] ?? '').trim()) { setAddError(`Fill in: ${f.label}.`); return; }
+    }
+    // Catalog services are VERIFIED live before anything is saved: the
+    // app calls the service's own API with these details, and only a
+    // success builds the connection. Custom services cannot be
+    // verified automatically, so they save directly.
+    if (view.kind === 'add' && view.service) {
+      setConnecting(true);
+      setAddError('');
+      const result = await verifyConnection(view.service, fieldValues);
+      setConnecting(false);
+      if (!result.ok) { setAddError(result.error ?? 'Could not verify.'); return; }
+      const id = newId();
+      await saveConnection({ id, name, service, scope: 'global', permissions: '', createdAt: nowIso() });
+      const toStore = fields.length === 1 ? fieldValues[fields[0].key].trim() : JSON.stringify(fieldValues);
+      await setConnectionToken(id, toStore);
+      setMsg(result.account ? `${name} connected as ${result.account}.` : `${name} connected. Verified with ${service}.`);
+      setView({ kind: 'list' });
+      refresh();
+      return;
+    }
     const id = newId();
     await saveConnection({ id, name, service, scope: 'global', permissions: '', createdAt: nowIso() });
-    if (addToken.trim()) await setConnectionToken(id, addToken);
-    setMsg(`${name} connected. Its key stays in this phone's secure storage only.`);
+    if ((fieldValues.token ?? '').trim()) await setConnectionToken(id, fieldValues.token);
+    setMsg(`${name} connected. Its details stay in this phone's secure storage only.`);
     setView({ kind: 'list' });
     refresh();
   }
@@ -115,38 +144,53 @@ export default function ConnectScreen() {
               value={query}
             />
             {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
-            {connected.length > 0 && (
-              <>
-                <Text style={styles.sectionTitle}>Connected</Text>
-                <Card>
-                  {connected.map((c, i) => (
-                    <Pressable key={c.id} onPress={() => { void openDetail(c); }} style={[styles.row, i > 0 && styles.rowDivider]}>
-                      <Feather name={iconFor(c.service)} size={22} color={tokens.text} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.rowTitle}>{c.name}</Text>
-                        <Text style={styles.rowSub}>{c.service}</Text>
-                      </View>
-                      <Feather name="chevron-right" size={20} color={tokens.textMuted} />
-                    </Pressable>
-                  ))}
-                </Card>
-              </>
-            )}
-            <Text style={styles.sectionTitle}>Available</Text>
+            <Text style={styles.sectionTitle}>Connected</Text>
             <Card>
-              {available.map((c, i) => (
-                <Pressable key={c.service} onPress={() => openAdd(c)} style={[styles.row, i > 0 && styles.rowDivider]}>
-                  <Feather name={c.icon} size={22} color={tokens.text} />
+              <Pressable onPress={() => Alert.alert('Browser', 'The in-chat browser is built into the app — no setup needed. Ask any chat to open a site. If a site needs login, you sign in yourself in the panel; the bot never types passwords.')} style={styles.row}>
+                <Feather name="globe" size={22} color={tokens.text} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>Browser</Text>
+                  <Text style={styles.rowSub}>Built into the app — no setup needed</Text>
+                </View>
+                <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+              </Pressable>
+              {connected.map((c) => (
+                <Pressable key={c.id} onPress={() => { void openDetail(c); }} style={[styles.row, styles.rowDivider]}>
+                  <Feather name={iconFor(c.service)} size={22} color={tokens.text} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle}>{c.service}</Text>
-                    <Text style={styles.rowSub} numberOfLines={2}>{c.blurb}</Text>
+                    <Text style={styles.rowTitle}>{c.name}</Text>
+                    <Text style={styles.rowSub}>{c.service}</Text>
                   </View>
-                  {connectedServices.has(c.service.toLowerCase()) && <Text style={styles.connectedTag}>Connected</Text>}
-                  <Text style={styles.connectText}>Connect</Text>
+                  <Feather name="chevron-right" size={20} color={tokens.textMuted} />
                 </Pressable>
               ))}
-              {matches('custom') && (
-                <Pressable onPress={() => openAdd(null)} style={[styles.row, available.length > 0 && styles.rowDivider]}>
+            </Card>
+            <Text style={styles.sectionTitle}>Available</Text>
+            {CONNECTION_CATEGORIES.map((cat) => {
+              const items = available.filter((c) => c.category === cat);
+              if (items.length === 0) return null;
+              return (
+                <View key={cat}>
+                  <Text style={styles.categoryTitle}>{cat}</Text>
+                  <Card>
+                    {items.map((c, i) => (
+                      <Pressable key={c.service} onPress={() => openAdd(c)} style={[styles.row, i > 0 && styles.rowDivider]}>
+                        <Feather name={c.icon} size={22} color={tokens.text} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.rowTitle}>{c.service}</Text>
+                          <Text style={styles.rowSub} numberOfLines={2}>{c.blurb}</Text>
+                        </View>
+                        {connectedServices.has(c.service.toLowerCase()) && <Text style={styles.connectedTag}>Connected</Text>}
+                        <Text style={styles.connectText}>Connect</Text>
+                      </Pressable>
+                    ))}
+                  </Card>
+                </View>
+              );
+            })}
+            {matches('custom') && (
+              <Card>
+                <Pressable onPress={() => openAdd(null)} style={styles.row}>
                   <Feather name="plus" size={22} color={tokens.text} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowTitle}>Custom service</Text>
@@ -154,8 +198,8 @@ export default function ConnectScreen() {
                   </View>
                   <Text style={styles.connectText}>Connect</Text>
                 </Pressable>
-              )}
-            </Card>
+              </Card>
+            )}
             <Text style={styles.note}>Gmail, Instagram, and similar login-based services are not listed here: they need a login (OAuth), which this phone-local app cannot do yet. Only services that work with an API key are offered.</Text>
           </>
         )}
@@ -168,12 +212,18 @@ export default function ConnectScreen() {
             </Pressable>
             <Text style={styles.title}>{view.service ? `Connect ${view.service.service}` : 'Custom service'}</Text>
             {view.service && <Text style={styles.sub}>{view.service.blurb}</Text>}
-            {view.service && <Text style={styles.sub}>Key needed: {view.service.keyHint}</Text>}
+            {view.service && <Text style={styles.sub}>Needed: {view.service.keyHint}</Text>}
             <Field label="Connection name" onChangeText={setAddName} value={addName} />
             {view.service === null && <Field label="Service" onChangeText={setAddService} value={addService} />}
-            <Field label="API key / token (secure storage only)" secure onChangeText={setAddToken} value={addToken} />
-            <Button title="Save connection" onPress={() => { void saveAdd(); }} />
-            <Text style={styles.note}>The key stays in this phone's secure storage. It is never shown again after saving.</Text>
+            {view.service
+              ? view.service.fields.map((f) => (
+                  <Field key={f.key} label={f.label} secure={f.secure} placeholder={f.placeholder} onChangeText={(t) => setFieldValues((v) => ({ ...v, [f.key]: t }))} value={fieldValues[f.key] ?? ''} />
+                ))
+              : <Field label="API key / token (secure storage only)" secure onChangeText={(t) => setFieldValues((v) => ({ ...v, token: t }))} value={fieldValues.token ?? ''} />}
+            {addError ? <Text style={styles.errorText}>{addError}</Text> : null}
+            <Button title={connecting ? 'Connecting…' : view.service ? 'Connect' : 'Save connection'} disabled={connecting} onPress={() => { void doConnect(); }} />
+            {view.service && <Text style={styles.note}>Connect checks these details with {view.service.service} right now. Only a verified connection is saved.</Text>}
+            <Text style={styles.note}>Details stay in this phone's secure storage. They are never shown again after saving.</Text>
           </>
         )}
 
@@ -226,9 +276,11 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
+  categoryTitle: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 8, marginTop: 12 },
   connectText: { color: tokens.accent, fontSize: tokens.font.md, fontWeight: '800' },
   connectedTag: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700', marginRight: 8 },
   detailHead: { alignItems: 'center', flexDirection: 'row', gap: 12, marginVertical: 8 },
+  errorText: { color: tokens.danger, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   msgText: { color: tokens.text, fontSize: tokens.font.md },
