@@ -20,6 +20,7 @@ import { ColorMode, FontStyle, useColorMode, useFontStyle, useTokens } from '../
 // Notifications toggle (no notification system), no Time & focus.
 const MENU: { label: string; detail: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
   { label: 'Model setup', detail: 'Providers, keys, and saved models', icon: 'cpu', route: '/model-setup' },
+  { label: 'Login', detail: 'Google sign-in (optional)', icon: 'user', route: '/login' },
   { label: 'Main Chat avatar', detail: 'Pick Main Chat\'s avatar', icon: 'smile', route: '/main-avatar' },
   { label: 'Connections', detail: 'Add and enable connections', icon: 'layers', route: '/connect' },
   { label: 'Skills', detail: 'Instruction templates', icon: 'zap', route: '/skills' },

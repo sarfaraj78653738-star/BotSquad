@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -15,7 +15,9 @@ export default function LegalScreen() {
   const tokens = useTokens();
   const styles = getStyles(tokens);
   const router = useRouter();
-  const [doc, setDoc] = useState<LegalDoc | null>(null);
+  const params = useLocalSearchParams();
+  const initialDoc = typeof params.doc === 'string' ? LEGAL_DOCS.find((d) => d.id === params.doc) ?? null : null;
+  const [doc, setDoc] = useState<LegalDoc | null>(initialDoc);
 
   return (
     <View style={styles.wrap}>

@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
 import { deleteConnection, listBotConnectionIds, listBots, listConnections, saveConnection, toggleBotConnection } from '../src/lib/db';
 import { deleteConnectionToken, getConnectionToken, setConnectionToken } from '../src/lib/connections';
-import { CONNECTION_CATALOG, CONNECTION_CATEGORIES, catalogFor, CatalogService } from '../src/lib/connectionCatalog';
+import { CONNECTION_CATALOG, CONNECTION_CATEGORIES, COMING_SOON_SERVICES, catalogFor, CatalogService } from '../src/lib/connectionCatalog';
 import { verifyConnection } from '../src/lib/connectionVerify';
 import { Bot, Connection, newId, nowIso } from '../src/lib/types';
 import { useTokens } from '../src/lib/tokens';
@@ -200,7 +200,24 @@ export default function ConnectScreen() {
                 </Pressable>
               </Card>
             )}
-            <Text style={styles.note}>Gmail, Instagram, and similar login-based services are not listed here: they need a login (OAuth), which this phone-local app cannot do yet. Only services that work with an API key are offered.</Text>
+            <Text style={styles.note}>Services that need a login (Gmail, Instagram, and similar) are listed under Coming soon below — they arrive with the server phase.</Text>
+            {COMING_SOON_SERVICES.filter((c) => matches(c.service) || matches(c.blurb)).length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Coming soon</Text>
+                <Card>
+                  {COMING_SOON_SERVICES.filter((c) => matches(c.service) || matches(c.blurb)).map((c, i) => (
+                    <Pressable key={c.service} onPress={() => Alert.alert(`${c.service} — coming soon`, `${c.service} needs a login (OAuth), which needs the server phase. It arrives when payment starts; until then it cannot be connected from this phone. `)} style={[styles.row, i > 0 && styles.rowDivider]}>
+                      <Feather name={c.icon} size={22} color={tokens.text} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rowTitle}>{c.service}</Text>
+                        <Text style={styles.rowSub} numberOfLines={2}>{c.blurb}</Text>
+                      </View>
+                      <Text style={styles.connectedTag}>Soon</Text>
+                    </Pressable>
+                  ))}
+                </Card>
+              </>
+            )}
           </>
         )}
 

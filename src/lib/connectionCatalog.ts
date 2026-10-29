@@ -154,3 +154,23 @@ export const CONNECTION_CATEGORIES: string[] = [
 export function catalogFor(service: string): CatalogService | undefined {
   return CONNECTION_CATALOG.find((c) => c.service.toLowerCase() === service.toLowerCase());
 }
+
+// Services that need a login (OAuth) and therefore a server: NOT
+// connectable in this phone-local version, and never faked as a key
+// field. They are listed in Connections under "Coming soon" (user
+// order 2026-10-29) and arrive with the server phase, when payment
+// starts. Tapping one explains that, instead of opening a form.
+export type ComingSoonService = {
+  service: string;
+  icon: React.ComponentProps<typeof Feather>['name'];
+  blurb: string;
+};
+
+export const COMING_SOON_SERVICES: ComingSoonService[] = [
+  { service: 'Gmail', icon: 'mail', blurb: 'Mail, search, and labels.' },
+  { service: 'Instagram', icon: 'camera', blurb: 'Posts, stories, and messages.' },
+  { service: 'Facebook', icon: 'facebook', blurb: 'Pages, posts, and messages.' },
+  { service: 'LinkedIn', icon: 'linkedin', blurb: 'Profile, posts, and messages.' },
+  { service: 'YouTube', icon: 'youtube', blurb: 'Channel, videos, and comments.' },
+  { service: 'X', icon: 'twitter', blurb: 'Posts and messages.' },
+];

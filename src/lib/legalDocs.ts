@@ -14,7 +14,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
     body: `BotSquad Privacy — GitHub v1.
 • Chats, bots, skills, routines, and memory notes stay on your device in local storage.
 • Your API keys are stored only in the device secure store (Android Keystore). They are sent only to the provider you chose, in a direct call from your device. They are never sent to BotSquad or to any other server.
-• This GitHub version has NO ads, NO payments, and NO login. The only third parties are the model provider you chose, and any GitHub repo or MCP server you add yourself. No analytics or tracking is shipped.
+• This GitHub version has NO ads and NO payments. Sign-in is optional, via Google only: your Google tokens stay in the device secure store and are never sent to BotSquad or to any other server.
 • This app is not affiliated with, endorsed by, or connected to any other AI product, and it makes no claim to be an official product of any other company.`,
   },
   {
