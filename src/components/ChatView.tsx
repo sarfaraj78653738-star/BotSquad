@@ -6,7 +6,7 @@ import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBots, listConnections, listMcpServers, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
+import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBots, listConnections, listMcpServers, listMemory, listMessages, listPlugins, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
 import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
@@ -18,6 +18,7 @@ import { AGENT_TOOLS_PROMPT, BOT_FILE_TOOLS_PROMPT, FILE_TOOL_NAMES, executeAgen
 import { connectedServicesPrompt } from '../lib/serviceTools';
 import { buildCrossChatDigest } from '../lib/crossChat';
 import { parseSkillCallout } from '../lib/skillCallout';
+import { parsePluginCallout, pluginPromptBlock } from '../lib/pluginCallout';
 import { mcpPromptBlock, parseMcpCallout } from '../lib/mcpCallout';
 import { parseConnectionCallout } from '../lib/connectionCallout';
 import { listMcpTools } from '../lib/mcp';
@@ -316,16 +317,24 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       const effectiveConns = connCallout.connection && !enabledConns.some((c) => c.service === connCallout.connection!.service && c.name === connCallout.connection!.name)
         ? [...enabledConns, { name: connCallout.connection.name, service: connCallout.connection.service }]
         : enabledConns;
-      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, effectiveConns) + mcpBlock;
+      // Plugin callout, same model as skills: a plugin named at the
+      // start of the message applies to this turn only, in Main, bot,
+      // and group chats alike (user order 2026-10-30: never
+      // Main-only). The model gets the plugin's manifest as guidance;
+      // its code never runs on the phone.
+      const pluginCallout = parsePluginCallout(connEffectiveText, await listPlugins());
+      const pluginBlock = pluginCallout.plugin ? pluginPromptBlock(pluginCallout.plugin) : '';
+      const pluginEffectiveText = pluginCallout.plugin ? pluginCallout.cleanText : connEffectiveText;
+      const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, effectiveConns) + mcpBlock + pluginBlock;
       const history = next.slice(-10).map((m) => ({ role: m.role, text: m.text }));
       // Main Chat is an agent, not just a chatbot: it knows the other
       // threads' recent context, and it can work with workspace files
       // and public web pages in a multi-step loop. A plain question
       // still gets a plain reply — the loop only engages when the
       // model emits a tool block for a real task. Bot chats run the
-      // same kind of loop for MCP and connected services only (user
-      // order 2026-10-29: MCP, connectors, skills in every chat, not
-      // just Main Chat); workspace files and deploys stay Main only.
+      // same kind of loop (user order 2026-10-29, extended 2026-10-30:
+      // MCP, connectors, skills, plugins, files, and deploy in every
+      // chat, not just Main Chat).
       let finalReply: string;
       if (universal) {
         let systemFull = system;
@@ -334,7 +343,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         systemFull += AGENT_TOOLS_PROMPT;
         const svcPrompt = await connectedServicesPrompt().catch(() => '');
         if (svcPrompt) systemFull += svcPrompt;
-        let reply = await chatWithBot(bot, systemFull, history, connEffectiveText);
+        let reply = await chatWithBot(bot, systemFull, history, pluginEffectiveText);
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
@@ -374,7 +383,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         if (effectiveConns.length) {
           botToolsPrompt += `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
         }
-        let reply = await chatWithBot(bot, system + botToolsPrompt, history, connEffectiveText);
+        let reply = await chatWithBot(bot, system + botToolsPrompt, history, pluginEffectiveText);
         {
           const loopHistory: { role: string; text: string }[] = [];
           const actionsTaken: string[] = [];

@@ -1,8 +1,9 @@
-import { addGroupMessage, getSetting, listBots, listConnections, listGroupMessages, listGroupThreads, listMcpServers, listMemory, listSkills } from './db';
+import { addGroupMessage, getSetting, listBots, listConnections, listGroupMessages, listGroupThreads, listMcpServers, listMemory, listPlugins, listSkills } from './db';
 import { buildSystemPrompt } from './prompt';
 import { chatWithBot } from './providers';
 import { errorCode } from './errors';
 import { parseSkillCallout } from './skillCallout';
+import { parsePluginCallout, pluginPromptBlock } from './pluginCallout';
 import { mcpPromptBlock, parseMcpCallout } from './mcpCallout';
 import { parseConnectionCallout } from './connectionCallout';
 import { listMcpTools } from './mcp';
@@ -77,6 +78,12 @@ export async function runGroupMessage(
   // only, on top of each bot's standing-enabled connections.
   const connCallout = parseConnectionCallout(mcpEffectiveText, allConns);
   const connEffectiveText = connCallout.connection ? connCallout.cleanText : mcpEffectiveText;
+  // Plugin callout, same model as single chats: a plugin named at the
+  // start applies to every bot for this turn only (user order
+  // 2026-10-30: Main, bot, and group alike, never Main-only).
+  const pluginCallout = parsePluginCallout(connEffectiveText, await listPlugins());
+  const pluginBlock = pluginCallout.plugin ? pluginPromptBlock(pluginCallout.plugin) : '';
+  const pluginEffectiveText = pluginCallout.plugin ? pluginCallout.cleanText : connEffectiveText;
 
   // Role-based auto-adopt (user order 2026-10-30): every bot replying to
   // every message was noise. Only bots whose role/task words appear in
@@ -89,7 +96,7 @@ export async function runGroupMessage(
     for (const w of words) if (lower.includes(w)) score++;
     return score;
   };
-  const scoredMembers = members.map((m) => ({ bot: m, score: roleScore(m, connEffectiveText) }));
+  const scoredMembers = members.map((m) => ({ bot: m, score: roleScore(m, pluginEffectiveText) }));
   const activeMembers = scoredMembers.some((s) => s.score > 0) ? scoredMembers.filter((s) => s.score > 0).map((s) => s.bot) : members;
   for (const bot of activeMembers) {
     onBotWorking?.(bot.name);
@@ -102,7 +109,7 @@ export async function runGroupMessage(
       const effectiveConns = connCallout.connection && !enabledConns.some((c) => c.service === connCallout.connection!.service && c.name === connCallout.connection!.name)
         ? [...enabledConns, { name: connCallout.connection.name, service: connCallout.connection.service }]
         : enabledConns;
-      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, effectiveConns) + mcpBlock + groupBlock;
+      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, effectiveConns) + mcpBlock + groupBlock + pluginBlock;
       // Same tool loop as single-bot chats, per bot: file tools,
       // deploy, mcp_call, and service_request, each approval-gated.
       // Guards: mcp_call only for the server called out this turn;
@@ -115,7 +122,7 @@ export async function runGroupMessage(
         botToolsPrompt += `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
       }
       const approve = requestApproval ?? (async () => false);
-      let reply = await chatWithBot(bot, system + botToolsPrompt, history, connEffectiveText);
+      let reply = await chatWithBot(bot, system + botToolsPrompt, history, pluginEffectiveText);
       {
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
