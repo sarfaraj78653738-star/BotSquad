@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Keyboard, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
@@ -52,8 +52,11 @@ export function MenuButton() {
 
 export function DrawerProvider({ children }: { children: React.ReactNode }) {
   const [visible, setVisible] = useState(false);
+  // Opening the drawer dismisses the keyboard (user order 2026-10-30):
+  // the chat composer keeps focus otherwise, so the keyboard used to
+  // sit open underneath the drawer.
   return (
-    <DrawerContext.Provider value={{ open: () => setVisible(true), close: () => setVisible(false) }}>
+    <DrawerContext.Provider value={{ open: () => { Keyboard.dismiss(); setVisible(true); }, close: () => setVisible(false) }}>
       {children}
       {visible ? <DrawerMenu onClose={() => setVisible(false)} /> : null}
     </DrawerContext.Provider>
@@ -69,6 +72,7 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
   const [language] = useLanguage();
 
   function go(route: string) {
+    Keyboard.dismiss();
     onClose();
     if (pathname !== route) router.push(route as never);
   }

@@ -31,7 +31,7 @@ export default function ModelSetupScreen() {
   const [apiKey, setApiKeyState] = useState('');
   const [endpoint, setEndpoint] = useState('');
   const [model, setModel] = useState('');
-  const [contextWindow, setContextWindow] = useState('8192');
+  const [contextWindow, setContextWindow] = useState('');
   const [msg, setMsg] = useState('');
   const [savedSetups, setSavedSetups] = useState<ModelSetup[]>([]);
   const [active, setActive] = useState<UniversalConfig | null>(null);
@@ -88,11 +88,15 @@ export default function ModelSetupScreen() {
     // Empty the form so the next model can be added straight away. The
     // saved key stays in secure storage (clearing the field does not
     // delete it); only a later Save with an empty key field would.
+    // Context is left EMPTY on purpose (user order 2026-10-30): no
+    // silent 8192 default — save rejects a blank window, so the next
+    // model must type its own. (Loading the active model's values on
+    // open, and via Use, is not a default — those are saved values.)
     setProvider('openai-compatible');
     setApiKeyState('');
     setEndpoint('');
     setModel('');
-    setContextWindow('8192');
+    setContextWindow('');
     await refreshSaved();
   }
 

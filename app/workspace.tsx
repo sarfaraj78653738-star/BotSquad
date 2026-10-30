@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useFocusEffect } from 'expo-router';
 import { Button, Card } from '../src/components/ui';
@@ -21,6 +21,7 @@ import { t } from '../src/lib/i18n';
 // Honest limit, shown on the screen: backend code saved here does NOT
 // run on the phone — export the ZIP and run it on a computer/server.
 type Row = { kind: 'file'; file: WorkspaceFile; label: string } | { kind: 'subhead'; label: string } | { kind: 'empty' };
+type Tab = 'main' | 'bots' | 'group';
 export default function WorkspaceScreen() {
   const tokens = useTokens();
   const [language] = useLanguage();
@@ -29,6 +30,7 @@ export default function WorkspaceScreen() {
   const [botNames, setBotNames] = useState<Map<string, string>>(new Map());
   const [groupTitles, setGroupTitles] = useState<Map<string, string>>(new Map());
   const [preview, setPreview] = useState<{ path: string; uri?: string; text?: string } | null>(null);
+  const [tab, setTab] = useState<Tab>('main');
 
   const refresh = useCallback(() => {
     listWorkspaceFiles().then(setFiles).catch(() => setFiles([]));
@@ -76,10 +78,16 @@ export default function WorkspaceScreen() {
       </View>
       <View style={styles.body}>
         <Button title={t(language, 'exportWorkspaceZip')} onPress={async () => { try { await exportWorkspaceZip(); } catch { Alert.alert(t(language, 'exportFailed'), t(language, 'zipFailed')); } }} />
-        <SectionList
-          sections={buildSections(files, botNames, groupTitles)}
+        <View style={styles.tabs}>
+          {([['main', 'mainChat'], ['bots', 'bots'], ['group', 'group']] as [Tab, string][]).map(([tabKey, labelKey]) => (
+            <Pressable key={tabKey} onPress={() => setTab(tabKey)} style={[styles.tab, tab === tabKey && styles.tabActive]}>
+              <Text style={[styles.tabText, tab === tabKey && styles.tabTextActive]}>{t(language, labelKey)}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <FlatList
+          data={buildTabRows(files, botNames, groupTitles)[tab]}
           keyExtractor={(row, i) => (row.kind === 'file' ? row.file.path : `${row.kind}-${i}`)}
-          renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
           renderItem={({ item }) => {
             if (item.kind === 'subhead') return <Text style={styles.subhead}>{item.label}</Text>;
             if (item.kind === 'empty') return <Card><Text style={styles.sub}>{t(language, 'noFilesYet')}</Text></Card>;
@@ -105,7 +113,7 @@ export default function WorkspaceScreen() {
   );
 }
 
-function buildSections(files: WorkspaceFile[], botNames: Map<string, string>, groupTitles: Map<string, string>): { title: string; data: Row[] }[] {
+function buildTabRows(files: WorkspaceFile[], botNames: Map<string, string>, groupTitles: Map<string, string>): Record<Tab, Row[]> {
   const main: Row[] = [];
   const botGroups = new Map<string, WorkspaceFile[]>();
   const groupGroups = new Map<string, WorkspaceFile[]>();
@@ -136,11 +144,11 @@ function buildSections(files: WorkspaceFile[], botNames: Map<string, string>, gr
     groupRows.push({ kind: 'subhead', label: groupTitles.get(id) ?? `Group ${id.slice(0, 8)}` });
     for (const f of fs) groupRows.push({ kind: 'file', file: f, label: f.path.slice(`groups/${id}/`.length) });
   }
-  return [
-    { title: 'Main Chat', data: main.length ? main : [{ kind: 'empty' }] },
-    { title: 'Bots', data: botRows.length ? botRows : [{ kind: 'empty' }] },
-    { title: 'Groups', data: groupRows.length ? groupRows : [{ kind: 'empty' }] },
-  ];
+  return {
+    main: main.length ? main : [{ kind: 'empty' }],
+    bots: botRows.length ? botRows : [{ kind: 'empty' }],
+    group: groupRows.length ? groupRows : [{ kind: 'empty' }],
+  };
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
@@ -150,8 +158,12 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   name: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
-  sectionHeader: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800', marginTop: tokens.space.md, marginBottom: tokens.space.sm },
   subhead: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '700', marginTop: tokens.space.sm, marginBottom: 2 },
+  tab: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, flex: 1, paddingVertical: 9 },
+  tabActive: { backgroundColor: tokens.text },
+  tabText: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '600', textAlign: 'center' },
+  tabTextActive: { color: tokens.surface },
+  tabs: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginBottom: tokens.space.md },
   previewText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 22 },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
