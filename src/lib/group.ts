@@ -1,4 +1,4 @@
-import { addGroupMessage, getSetting, listBotConnectionIds, listBots, listConnections, listGroupMessages, listMcpServers, listMemory, listSkills } from './db';
+import { addGroupMessage, getSetting, listBotConnectionIds, listBots, listConnections, listGroupMessages, listGroupThreads, listMcpServers, listMemory, listSkills } from './db';
 import { buildSystemPrompt } from './prompt';
 import { chatWithBot } from './providers';
 import { errorCode } from './errors';
@@ -36,7 +36,16 @@ export async function runGroupMessage(
   }
 
   const allBots = await listBots();
-  const otherNames = allBots.map((b) => b.name);
+  // Others carry name + role, not just name: a bot that only knows
+  // "Sales Helper" exists cannot answer who does what on the team.
+  const otherNames = allBots.map((b) => (b.role ? `${b.name} — ${b.role}` : b.name));
+  // Group surroundings (bug 2026-10-30): until now a group bot got no
+  // group context at all, so "who is in this group, what are their
+  // roles?" was truthfully answered with "I don't have that info".
+  // Every group reply now carries this thread's title + member list.
+  const threadTitle = (await listGroupThreads().catch(() => [])).find((x) => x.id === threadId)?.title ?? '';
+  const memberList = members.map((m) => (m.role ? `${m.name} — ${m.role}` : m.name)).join('; ');
+  const groupBlock = `\n\n[THIS GROUP — you are replying inside a group chat, not a 1:1 chat.${threadTitle ? ` Group title: "${threadTitle}".` : ''} Members of THIS group: ${memberList}. When the user asks who is in this group or what anyone's role is, answer from this list — never say you do not have it.]`;
   // Skill callout, same model as single chats: a skill named at the
   // start of the message applies to every bot for this turn only.
   const callout = parseSkillCallout(userText.trim(), await listSkills());
@@ -79,7 +88,7 @@ export async function runGroupMessage(
       const effectiveConns = connCallout.connection && !enabledConns.some((c) => c.service === connCallout.connection!.service && c.name === connCallout.connection!.name)
         ? [...enabledConns, { name: connCallout.connection.name, service: connCallout.connection.service }]
         : enabledConns;
-      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, effectiveConns) + mcpBlock;
+      const system = buildSystemPrompt(bot, memory, otherNames, enabledSkills, profilePrefs, effectiveConns) + mcpBlock + groupBlock;
       // Same tool loop as single-bot chats, per bot: only mcp_call
       // and service_request, each approval-gated. Guards: mcp_call
       // only for the server called out this turn; service_request

@@ -28,7 +28,7 @@ export function buildSystemPrompt(bot: Bot, memory: MemoryNote[], otherBotNames:
     return true;
   });
   const memoryText = safeMemory.map((m) => `- ${m.note}`).join('\n') || 'None yet.';
-  const others = otherBotNames.filter((n) => n !== bot.name).join(', ') || 'none';
+  const others = otherBotNames.filter((n) => n !== bot.name && !n.startsWith(`${bot.name} — `)).join(', ') || 'none';
   // Profile preferences (saved on the Profile page, local only): a short
   // note considered in every chat, ignored when empty. Capped at 500
   // characters so it stays a note, not a second system prompt, and

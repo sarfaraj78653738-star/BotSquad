@@ -108,6 +108,21 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     return () => sub.remove();
   }, []);
 
+  // New-message scroll (bug 2026-10-30, round 2): the stick-to-bottom
+  // flag alone was not enough — when the keyboard resizes the list,
+  // the list ends up sitting above the bottom and no scroll event
+  // re-sticks it, so an arriving AI reply never scrolled into view
+  // even though the user's own typed text did (keyboard-open scroll).
+  // A growing message count now always scrolls, in every chat.
+  const prevMsgCount = useRef(0);
+  useEffect(() => {
+    if (messages.length > prevMsgCount.current) {
+      scrollToBottom(scrolledOnce.current);
+      scrolledOnce.current = true;
+    }
+    prevMsgCount.current = messages.length;
+  }, [messages.length]);
+
   useEffect(() => {
     (async () => {
       setFailedCode(null);
@@ -268,7 +283,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     }
     try {
       const memory = await listMemory(bot.id);
-      const others = (await listBots()).map((b) => b.name);
+      const others = (await listBots()).map((b) => (b.role ? `${b.name} — ${b.role}` : b.name));
       // Skills are called out, not pre-enabled (user order 2026-10-29):
       // "/skill-name ..." or "Skill Name, ..." at the start of the
       // message applies that saved skill for this turn only.
@@ -509,7 +524,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           );
         }}
       />}
-      {loading && <LoadingRow label={t(language, 'botWorking')} />}
+      {loading && <LoadingRow label={universal ? t(language, 'working') : t(language, 'botWorking')} />}
       {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
 
       {failedCode !== null && failedText ? (

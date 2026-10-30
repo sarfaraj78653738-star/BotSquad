@@ -76,6 +76,18 @@ export default function GroupScreen() {
     return () => sub.remove();
   }, []);
 
+  // New-message scroll, same fix as ChatView (2026-10-30, round 2): a
+  // growing message count always scrolls, so an arriving group reply
+  // can never sit hidden below the fold.
+  const prevMsgCount = useRef(0);
+  useEffect(() => {
+    if (messages.length > prevMsgCount.current) {
+      listRef.current?.scrollToEnd({ animated: scrolledOnce.current });
+      scrolledOnce.current = true;
+    }
+    prevMsgCount.current = messages.length;
+  }, [messages.length]);
+
   const refresh = useCallback(() => {
     listBots().then(setBots).catch(() => {});
     listGroupThreads().then(setThreads).catch(() => {});
