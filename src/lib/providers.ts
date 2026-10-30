@@ -38,7 +38,7 @@ function resolveOpenAiEndpoint(endpoint: string): string {
 // The bot's own provider/model/endpoint are IGNORED: every chat uses the
 // shared universal config (see src/lib/universal.ts) instead, so Main
 // Chat, bot chats and group chats all use the same model.
-export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { role: string; text: string }[], userText: string): Promise<string> {
+export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { role: string; text: string }[], userText: string, signal?: AbortSignal): Promise<string> {
   const universal = await getUniversal();
   const provider = universal.provider as ProviderId;
   // Never fall through to OpenAI for an unknown provider value: a key
@@ -54,6 +54,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
     if (provider === 'anthropic') {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model, max_tokens: 1024, system: systemPrompt, messages: [...capped.map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.text })), { role: 'user', content: userText }] }),
       });
@@ -68,6 +69,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
       const res = await fetch(url, {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
         body: JSON.stringify({ system_instruction: { parts: [{ text: systemPrompt }] }, contents: [...capped.map((h) => ({ role: h.role === 'assistant' ? 'model' : 'user', parts: [{ text: h.text }] })), { role: 'user', parts: [{ text: userText }] }] }),
       });
@@ -80,6 +82,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
     // is never sent to a host the user did not choose.
     const res = await fetch(resolveOpenAiEndpoint(universal.endpoint), {
       method: 'POST',
+      signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model,
@@ -90,6 +93,11 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
     const data: any = await res.json();
     return data.choices?.[0]?.message?.content || '(empty reply)';
   } catch (e) {
+    // A user-cancelled request must stay recognisable as a cancel:
+    // without this the NETWORK wrap below would turn it into a
+    // provider failure and the UI would show an error banner for a
+    // task the user stopped on purpose (bug 2026-10-30).
+    if (signal?.aborted) throw e;
     if (e instanceof ProviderError) throw e;
     throw new ProviderError('NETWORK', 'No network or the provider could not be reached. Check your connection and try again.');
   }

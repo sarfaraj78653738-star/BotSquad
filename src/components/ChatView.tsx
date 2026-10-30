@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
+import { AlertDialog, type AlertDialogButton } from './AlertDialog';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
 import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBots, listConnections, listMcpServers, listMemory, listMessages, listPlugins, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
@@ -82,9 +83,30 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
 
   function requestApproval(summary: string, preview: string): Promise<boolean> {
     const translated = translateApproval(language, summary, preview);
-    return new Promise((resolve) => setPendingApproval({ summary: translated.summary, preview: translated.preview, resolve }));
+    return new Promise((resolve) => {
+      pendingApprovalRef.current = resolve;
+      setPendingApproval({ summary: translated.summary, preview: translated.preview, resolve });
+    });
   }
   const [adsRemoved, setAdsRemoved] = useState(false);
+  // Cancel (user order 2026-10-30): while a reply is loading, the
+  // composer's send button becomes a stop button. Aborting the
+  // controller rejects the in-flight provider fetch at once; a wait
+  // on an approval card is released with "reject" so the loop can
+  // exit instead of hanging on the card. A cancelled turn shows no
+  // error banner and no retry — the user's message stays, no reply
+  // is saved.
+  const abortRef = useRef<AbortController | null>(null);
+  const pendingApprovalRef = useRef<((ok: boolean) => void) | null>(null);
+  function cancelSend() {
+    pendingApprovalRef.current?.(false);
+    pendingApprovalRef.current = null;
+    setPendingApproval(null);
+    abortRef.current?.abort();
+  }
+  // Themed dialogs (bug 2026-10-30): Alert.alert renders the system
+  // dialog, which ignores the app's dark mode and showed up white.
+  const [dialog, setDialog] = useState<{ title: string; message?: string; buttons: AlertDialogButton[] } | null>(null);
   const [voiceNote, setVoiceNote] = useState('');
   const voiceBase = useRef('');
   // Live in-chat browser: opened by user intent ("open Facebook") or
@@ -102,6 +124,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
   const listRef = useRef<FlatList<Message> | null>(null);
   const stickToBottom = useRef(true);
   const scrolledOnce = useRef(false);
+  const scrollPending = useRef(false);
   const scrollToBottom = (animated: boolean) => listRef.current?.scrollToEnd({ animated });
 
   useEffect(() => {
@@ -118,7 +141,16 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
   const prevMsgCount = useRef(0);
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
+      // Round 3 (bug 2026-10-30): scrolling at once was not enough —
+      // it ran before the new rows were laid out, landed short, and
+      // the short landing flipped stickToBottom off, so the layout
+      // correction never ran and the reply's last lines stayed hidden
+      // below the composer. So the growth also arms a pending scroll
+      // (the next content-size change scrolls regardless of stick)
+      // and a deferred scroll after layout settles.
+      scrollPending.current = true;
       scrollToBottom(scrolledOnce.current);
+      setTimeout(() => scrollToBottom(false), 150);
       scrolledOnce.current = true;
     }
     prevMsgCount.current = messages.length;
@@ -221,7 +253,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     try {
       await exportChatZip(threadTitle, messages.map((m) => ({ role: m.role, text: m.text })));
     } catch {
-      Alert.alert(t(language, 'exportFailed'), t(language, 'zipFailed'));
+      setDialog({ title: t(language, 'exportFailed'), message: t(language, 'zipFailed'), buttons: [{ text: 'OK' }] });
     }
   }
 
@@ -275,6 +307,8 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
     setFailedCode(null);
     setFailedText(null);
     setLoading(true);
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
     let next = messages;
     if (!reuseUser) {
       const userMsg: Message = { id: newId(), chatId, botId: bot.id, role: 'user', text: text.trim(), approvalState: null, createdAt: nowIso() };
@@ -343,7 +377,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         systemFull += AGENT_TOOLS_PROMPT;
         const svcPrompt = await connectedServicesPrompt().catch(() => '');
         if (svcPrompt) systemFull += svcPrompt;
-        let reply = await chatWithBot(bot, systemFull, history, pluginEffectiveText);
+        let reply = await chatWithBot(bot, systemFull, history, pluginEffectiveText, signal);
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
@@ -359,7 +393,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           loopHistory.push({ role: 'assistant', text: reply });
           loopHistory.push({ role: 'user', text: results.join('\n\n') });
           if (step === 7) break;
-          reply = await chatWithBot(bot, systemFull, [...history, ...loopHistory], 'Continue with the task. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.');
+          reply = await chatWithBot(bot, systemFull, [...history, ...loopHistory], 'Continue with the task. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.', signal);
         }
         finalReply = stripToolBlocks(reply);
         if (!finalReply) finalReply = actionsTaken.length ? `Done. Changes: ${actionsTaken.join('; ')}. Open Workspace to preview or export.` : 'Done.';
@@ -383,7 +417,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         if (effectiveConns.length) {
           botToolsPrompt += `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
         }
-        let reply = await chatWithBot(bot, system + botToolsPrompt, history, pluginEffectiveText);
+        let reply = await chatWithBot(bot, system + botToolsPrompt, history, pluginEffectiveText, signal);
         {
           const loopHistory: { role: string; text: string }[] = [];
           const actionsTaken: string[] = [];
@@ -422,7 +456,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
             loopHistory.push({ role: 'assistant', text: reply });
             loopHistory.push({ role: 'user', text: results.join('\n\n') });
             if (step === 7) break;
-            reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.');
+            reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.', signal);
           }
           finalReply = stripToolBlocks(reply);
           if (!finalReply) finalReply = actionsTaken.length ? `Done. Used: ${actionsTaken.join('; ')}.` : 'Done.';
@@ -441,26 +475,39 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       const assistantMsg: Message = { id: newId(), chatId, botId: bot.id, role: 'assistant', text: finalReply, approvalState: null, createdAt: nowIso() };
       await addMessage(assistantMsg);
       setMessages([...next, assistantMsg]);
-      const note = extractMemoryNote(text, finalReply);
-      if (note) await addMemory(bot.id, note, 'auto_learned');
-      // Automatic skill saving, no approval prompt, no popup: a
-      // pattern-based on-device detector (see lib/autoSkill.ts) saves
-      // a clear standing instruction, correction, or preference as a
-      // skill in the local skills store. It is NOT enabled for any bot
-      // until the user reviews and enables it on the Skills page, and
-      // an identical instruction is never saved twice.
-      const auto = detectAutoSkill(text.trim(), finalReply);
-      if (auto) {
-        const existing = await listSkills();
-        const snippet = auto.instruction.slice(0, 60);
-        if (!existing.some((s) => s.template.includes(snippet))) {
-          await saveSkill({ id: newId(), botId: universal ? null : bot.id, name: auto.name, template: `Auto-saved from a chat with ${bot.name}. Review before enabling — this is a note only; it never overrides hard boundaries, never sends anything externally, and never executes code.\n\n${auto.instruction}`, source: 'local', repoUrl: null, permissions: '', createdAt: nowIso() });
+      // A delivered reply clears any earlier failure banner at once.
+      setFailedCode(null);
+      setFailedText(null);
+      // Post-save notes (memory, auto-skill) are best-effort and live
+      // in their own try/catch: a throw here used to land in the outer
+      // catch and surface as "Error 503" on top of a reply that had
+      // already arrived (bug 2026-10-30). The reply stands regardless.
+      try {
+        const note = extractMemoryNote(text, finalReply);
+        if (note) await addMemory(bot.id, note, 'auto_learned');
+        // Automatic skill saving, no approval prompt, no popup: a
+        // pattern-based on-device detector (see lib/autoSkill.ts) saves
+        // a clear standing instruction, correction, or preference as a
+        // skill in the local skills store. It is NOT enabled for any bot
+        // until the user reviews and enables it on the Skills page, and
+        // an identical instruction is never saved twice.
+        const auto = detectAutoSkill(text.trim(), finalReply);
+        if (auto) {
+          const existing = await listSkills();
+          const snippet = auto.instruction.slice(0, 60);
+          if (!existing.some((s) => s.template.includes(snippet))) {
+            await saveSkill({ id: newId(), botId: universal ? null : bot.id, name: auto.name, template: `Auto-saved from a chat with ${bot.name}. Review before enabling — this is a note only; it never overrides hard boundaries, never sends anything externally, and never executes code.\n\n${auto.instruction}`, source: 'local', repoUrl: null, permissions: '', createdAt: nowIso() });
+          }
         }
-      }
+      } catch { /* notes are best-effort; the reply already arrived */ }
     } catch (e) {
-      setFailedCode(errorCode(e));
-      setFailedText(text.trim());
+      // A cancelled turn is not a failure: no error banner, no retry.
+      if (!signal.aborted && (e as { name?: string } | null)?.name !== 'AbortError') {
+        setFailedCode(errorCode(e));
+        setFailedText(text.trim());
+      }
     } finally {
+      abortRef.current = null;
       setLoading(false);
     }
   }
@@ -481,6 +528,13 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
 
   return (
     <View style={styles.wrap}>
+      <AlertDialog
+        visible={dialog !== null}
+        title={dialog?.title ?? ''}
+        message={dialog?.message}
+        buttons={dialog?.buttons ?? []}
+        onDismiss={() => setDialog(null)}
+      />
       {topBar(bot, headerActions)}
       <AdSlot visible={!adsRemoved && loading} />
       {browserExpanded ? null : <FlatList
@@ -495,7 +549,8 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           stickToBottom.current = contentSize.height - (layoutMeasurement.height + contentOffset.y) < 120;
         }}
         onContentSizeChange={() => {
-          if (stickToBottom.current) scrollToBottom(scrolledOnce.current);
+          if (stickToBottom.current || scrollPending.current) scrollToBottom(scrolledOnce.current);
+          scrollPending.current = false;
           scrolledOnce.current = true;
         }}
         renderItem={({ item }) => {
@@ -528,7 +583,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
               <View style={styles.msgActions}>
                 <Pressable
                   accessibilityLabel="Save as artifact"
-                  onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert(t(language, 'saved'), t(language, 'savedToArtifacts')); }}
+                  onPress={async () => { await saveArtifactFromReply(item.text); setDialog({ title: t(language, 'saved'), message: t(language, 'savedToArtifacts'), buttons: [{ text: 'OK' }] }); }}
                 >
                   <Text style={styles.saveArtifact}>{t(language, 'saveAsArtifact')}</Text>
                 </Pressable>
@@ -573,8 +628,8 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
           <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
           <View style={styles.approvalRow}>
-            <Button title={t(language, 'approve')} onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
-            <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
+            <Button title={t(language, 'approve')} onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(true); setPendingApproval(null); }} />
+            <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(false); setPendingApproval(null); }} />
           </View>
         </View>
       ) : null}
@@ -585,6 +640,7 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           placeholder={universal ? t(language, 'messagePlaceholder') : t(language, 'messageBotPlaceholder')}
           loading={loading}
           onSend={() => { const t = input; setInput(''); voiceBase.current = ''; void send(t); }}
+          onCancel={cancelSend}
           onAttachment={handleAttachment}
           onVoicePartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
           onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote(''); }}

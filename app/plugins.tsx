@@ -32,7 +32,6 @@ export default function PluginsScreen() {
       </View>
     <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
       <Text style={styles.sub}>{t(language, 'pluginsIntro')}</Text>
-      <Text style={styles.sub}>Tip: use a plugin in any chat — Main, bot, or group — with /plugin-name at the start of your message, for that turn only.</Text>
       {plugins.length === 0 && <Text style={styles.sub}>{t(language, 'noPlugins')}</Text>}
       {plugins.map((p) => (
         <Card key={p.id}>

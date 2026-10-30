@@ -1,4 +1,4 @@
-import { getDb } from './db';
+import { getDb, getSetting, setSetting } from './db';
 import { newId, nowIso } from './types';
 
 // Projects and Artifacts — local only, SQLite, no sample data.
@@ -36,6 +36,24 @@ export async function deleteProject(id: string): Promise<void> {
   await ensureTables();
   const d = await getDb();
   await d.runAsync('DELETE FROM projects WHERE id = ?', [id]);
+}
+
+// Project pin (user order 2026-10-30): pinned projects sort first on
+// the Projects screen. Same settings-list pattern as pinned threads
+// in db.ts — no schema change, so old installs just start unpinned.
+export async function getPinnedProjects(): Promise<string[]> {
+  try {
+    const raw = await getSetting('pinned_projects');
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch { return []; }
+}
+
+export async function togglePinProject(id: string): Promise<boolean> {
+  const pinned = await getPinnedProjects();
+  const next = pinned.includes(id) ? pinned.filter((x) => x !== id) : [...pinned, id];
+  await setSetting('pinned_projects', JSON.stringify(next));
+  return next.includes(id);
 }
 
 export async function listArtifacts(): Promise<Artifact[]> {

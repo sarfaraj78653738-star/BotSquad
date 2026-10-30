@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system';
 import { shareZipFile, zipFilesBase64 } from './chatExport';
+import { getSetting, setSetting } from './db';
 
 // The agent workspace: plain files on the phone, under the app's own
 // documents directory. The agent reads, writes, and edits these files
@@ -60,6 +61,24 @@ export async function writeWorkspaceFile(path: string, content: string): Promise
 export async function deleteWorkspaceFile(path: string): Promise<void> {
   const dir = await workspaceDir();
   await FileSystem.deleteAsync(`${dir}${path}`, { idempotent: true });
+}
+
+// File pin (user order 2026-10-30): pinned files sort first on the
+// Workspace screen, within their own tab and section. Same
+// settings-list pattern as pinned threads — no schema change.
+export async function getPinnedFiles(): Promise<string[]> {
+  try {
+    const raw = await getSetting('pinned_files');
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch { return []; }
+}
+
+export async function togglePinFile(path: string): Promise<boolean> {
+  const pinned = await getPinnedFiles();
+  const next = pinned.includes(path) ? pinned.filter((x) => x !== path) : [...pinned, path];
+  await setSetting('pinned_files', JSON.stringify(next));
+  return next.includes(path);
 }
 
 export async function workspaceFileUri(path: string): Promise<string> {

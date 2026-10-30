@@ -1,16 +1,22 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Modal, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useLanguage, useTokens } from '../lib/tokens';
 import { t } from '../lib/i18n';
+import { AlertDialog, type AlertDialogButton } from './AlertDialog';
 
 // Attach (+) button. Tapping it opens a bottom sheet titled
 // "Add to chat" with Camera, Photos, and Files. Picking an item does
 // NOT upload it and does NOT read its contents — the caller only gets
 // its name, size and kind, and sends a plain note about it.
+// Permission rule (bug 2026-10-30): a denied permission used to end
+// in a silent return — no prompt, no picker, no explanation — because
+// Android never re-shows a dialog for a permission already denied.
+// Now a denial shows why nothing opened and where to allow it, and
+// Files asks its in-app prompt first, like the Settings flow does.
 export function AttachButton({ onAttachment, disabled, variant }: {
   onAttachment: (att: { name: string; size: number | null; kind: 'photo' | 'document' }) => void;
   disabled?: boolean;
@@ -21,12 +27,42 @@ export function AttachButton({ onAttachment, disabled, variant }: {
   const insets = useSafeAreaInsets();
   const styles = getStyles(tokens);
   const [open, setOpen] = useState(false);
+  const [dialog, setDialog] = useState<{ title: string; message?: string; buttons: AlertDialogButton[] } | null>(null);
+
+  function deniedAlert(kind: string) {
+    setDialog({
+      title: `${kind} permission denied`,
+      message: 'Allow it from Settings → Permissions, then try again.',
+      buttons: [
+        { text: 'OK' },
+        // Last resort only, on an explicit tap: when Android refuses
+        // to re-show the dialog, system settings is the only way back.
+        { text: 'App settings', onPress: () => { void Linking.openSettings(); } },
+      ],
+    });
+  }
+
+  async function requestFilesPermission(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    try {
+      const api = typeof Platform.Version === 'number' ? Platform.Version : 0;
+      if (api >= 33) {
+        await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
+        ]);
+      } else {
+        await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+      }
+    } catch { /* system picker still grants per-file access below */ }
+  }
 
   async function pickCamera() {
     setOpen(false);
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) return;
+      if (!perm.granted) { deniedAlert('Camera'); return; }
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images });
       if (result.canceled) return;
       const asset = result.assets?.[0];
@@ -42,7 +78,7 @@ export function AttachButton({ onAttachment, disabled, variant }: {
     setOpen(false);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) return;
+      if (!perm.granted) { deniedAlert('Photos'); return; }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images });
       if (result.canceled) return;
       const asset = result.assets?.[0];
@@ -55,9 +91,9 @@ export function AttachButton({ onAttachment, disabled, variant }: {
     }
   }
 
-  async function pickDocument() {
-    setOpen(false);
+  async function openDocumentPicker() {
     try {
+      await requestFilesPermission();
       const result = await DocumentPicker.getDocumentAsync({});
       if (result.canceled) return;
       const asset = result.assets?.[0];
@@ -69,6 +105,22 @@ export function AttachButton({ onAttachment, disabled, variant }: {
     }
   }
 
+  function pickDocument() {
+    setOpen(false);
+    // Files asks its in-app prompt first (same wording as the
+    // Settings → Permissions flow). The system file picker itself
+    // needs no OS permission — choosing a file IS the grant — so
+    // after Allow the picker opens whatever the OS request returned.
+    setDialog({
+      title: 'Files',
+      message: 'Allow BotSquad to read files you pick?',
+      buttons: [
+        { text: 'Deny', style: 'cancel' },
+        { text: 'Allow', onPress: () => { void openDocumentPicker(); } },
+      ],
+    });
+  }
+
   const options: { label: string; icon: React.ComponentProps<typeof Feather>['name']; onPress: () => void }[] = [
     { label: t(language, 'camera'), icon: 'camera', onPress: () => { void pickCamera(); } },
     { label: t(language, 'photos'), icon: 'image', onPress: () => { void pickPhoto(); } },
@@ -77,6 +129,13 @@ export function AttachButton({ onAttachment, disabled, variant }: {
 
   return (
     <View>
+      <AlertDialog
+        visible={dialog !== null}
+        title={dialog?.title ?? ''}
+        message={dialog?.message}
+        buttons={dialog?.buttons ?? []}
+        onDismiss={() => setDialog(null)}
+      />
       <Pressable
         accessibilityLabel="Attach photo or document"
         accessibilityRole="button"

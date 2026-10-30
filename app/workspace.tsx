@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useFocusEffect } from 'expo-router';
 import { Button, Card } from '../src/components/ui';
+import { AlertDialog, type AlertDialogButton } from '../src/components/AlertDialog';
 import { MenuButton } from '../src/components/Drawer';
-import { deleteWorkspaceFile, exportWorkspaceZip, listWorkspaceFiles, readWorkspaceFile, workspaceFileUri, WorkspaceFile } from '../src/lib/workspace';
+import { deleteWorkspaceFile, exportWorkspaceZip, getPinnedFiles, listWorkspaceFiles, readWorkspaceFile, togglePinFile, workspaceFileUri, WorkspaceFile } from '../src/lib/workspace';
 import { listBots, listGroupThreads } from '../src/lib/db';
 import { useLanguage, useTokens } from '../src/lib/tokens';
 import { t } from '../src/lib/i18n';
@@ -31,9 +32,12 @@ export default function WorkspaceScreen() {
   const [groupTitles, setGroupTitles] = useState<Map<string, string>>(new Map());
   const [preview, setPreview] = useState<{ path: string; uri?: string; text?: string } | null>(null);
   const [tab, setTab] = useState<Tab>('main');
+  const [pinnedPaths, setPinnedPaths] = useState<string[]>([]);
+  const [dialog, setDialog] = useState<{ title: string; message?: string; buttons: AlertDialogButton[] } | null>(null);
 
   const refresh = useCallback(() => {
     listWorkspaceFiles().then(setFiles).catch(() => setFiles([]));
+    getPinnedFiles().then(setPinnedPaths).catch(() => {});
     listBots().then((b) => setBotNames(new Map(b.map((x) => [x.id, x.name])))).catch(() => {});
     listGroupThreads().then((g) => setGroupTitles(new Map(g.map((x) => [x.id, x.title])))).catch(() => {});
   }, []);
@@ -44,8 +48,26 @@ export default function WorkspaceScreen() {
       setPreview({ path: f.path, uri: await workspaceFileUri(f.path) });
     } else {
       try { setPreview({ path: f.path, text: await readWorkspaceFile(f.path) }); }
-      catch { Alert.alert(t(language, 'couldNotOpen'), t(language, 'couldNotRead')); }
+      catch { setDialog({ title: t(language, 'couldNotOpen'), message: t(language, 'couldNotRead'), buttons: [{ text: 'OK' }] }); }
     }
+  }
+
+  function confirmDeleteFile(f: WorkspaceFile) {
+    // Themed dialog, not Alert.alert: the system dialog ignored the
+    // app's dark mode and showed up white (bug 2026-10-30).
+    setDialog({
+      title: t(language, 'deleteFileTitle'),
+      message: `${f.path} ${t(language, 'willBeRemoved')}`,
+      buttons: [
+        { text: t(language, 'cancel'), style: 'cancel' },
+        { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteWorkspaceFile(f.path); refresh(); } },
+      ],
+    });
+  }
+
+  async function togglePin(f: WorkspaceFile) {
+    await togglePinFile(f.path);
+    refresh();
   }
 
   if (preview) {
@@ -71,13 +93,20 @@ export default function WorkspaceScreen() {
 
   return (
     <View style={styles.wrap}>
+      <AlertDialog
+        visible={dialog !== null}
+        title={dialog?.title ?? ''}
+        message={dialog?.message}
+        buttons={dialog?.buttons ?? []}
+        onDismiss={() => setDialog(null)}
+      />
       <View style={styles.header}>
         <MenuButton />
         <Text style={styles.headerTitle}>{t(language, 'workspace')}</Text>
         <View style={{ width: 34 }} />
       </View>
       <View style={styles.body}>
-        <Button title={t(language, 'exportWorkspaceZip')} onPress={async () => { try { await exportWorkspaceZip(); } catch { Alert.alert(t(language, 'exportFailed'), t(language, 'zipFailed')); } }} />
+        <Button title={t(language, 'exportWorkspaceZip')} onPress={async () => { try { await exportWorkspaceZip(); } catch { setDialog({ title: t(language, 'exportFailed'), message: t(language, 'zipFailed'), buttons: [{ text: 'OK' }] }); } }} />
         <View style={styles.tabs}>
           {([['main', 'mainChat'], ['bots', 'bots'], ['group', 'group']] as [Tab, string][]).map(([tabKey, labelKey]) => (
             <Pressable key={tabKey} onPress={() => setTab(tabKey)} style={[styles.tab, tab === tabKey && styles.tabActive]}>
@@ -86,24 +115,27 @@ export default function WorkspaceScreen() {
           ))}
         </View>
         <FlatList
-          data={buildTabRows(files, botNames, groupTitles)[tab]}
+          data={buildTabRows(files, botNames, groupTitles, pinnedPaths)[tab]}
           keyExtractor={(row, i) => (row.kind === 'file' ? row.file.path : `${row.kind}-${i}`)}
           renderItem={({ item }) => {
             if (item.kind === 'subhead') return <Text style={styles.subhead}>{item.label}</Text>;
             if (item.kind === 'empty') return <Card><Text style={styles.sub}>{t(language, 'noFilesYet')}</Text></Card>;
             const f = item.file;
+            const pinned = pinnedPaths.includes(f.path);
             return (
               <Card>
                 <Pressable onPress={() => { void openFile(f); }}>
-                  <Text style={styles.name}>{item.label}</Text>
+                  <Text style={styles.name}>{item.label}{pinned ? ' · Pinned' : ''}</Text>
                   <Text style={styles.sub}>{f.size} {t(language, 'bytes')}</Text>
                 </Pressable>
-                <Pressable onPress={() => Alert.alert(t(language, 'deleteFileTitle'), `${f.path} ${t(language, 'willBeRemoved')}`, [
-                  { text: t(language, 'cancel'), style: 'cancel' },
-                  { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteWorkspaceFile(f.path); refresh(); } },
-                ])}>
-                  <Text style={[styles.sub, { color: tokens.danger }]}>{t(language, 'delete')}</Text>
-                </Pressable>
+                <View style={styles.rowActions}>
+                  <Pressable accessibilityLabel={`${pinned ? 'Unpin' : 'Pin'} file ${f.path}`} onPress={() => { void togglePin(f); }}>
+                    <Text style={styles.pin}>{pinned ? 'Unpin' : 'Pin'}</Text>
+                  </Pressable>
+                  <Pressable accessibilityLabel={`Delete file ${f.path}`} onPress={() => confirmDeleteFile(f)}>
+                    <Text style={[styles.sub, { color: tokens.danger }]}>{t(language, 'delete')}</Text>
+                  </Pressable>
+                </View>
               </Card>
             );
           }}
@@ -113,7 +145,10 @@ export default function WorkspaceScreen() {
   );
 }
 
-function buildTabRows(files: WorkspaceFile[], botNames: Map<string, string>, groupTitles: Map<string, string>): Record<Tab, Row[]> {
+function buildTabRows(files: WorkspaceFile[], botNames: Map<string, string>, groupTitles: Map<string, string>, pinnedPaths: string[]): Record<Tab, Row[]> {
+  // Pinned files sort first (user order 2026-10-30), within their
+  // own tab and section — section order itself never changes.
+  const byPin = (a: WorkspaceFile, b: WorkspaceFile) => Number(pinnedPaths.includes(b.path)) - Number(pinnedPaths.includes(a.path));
   const main: Row[] = [];
   const botGroups = new Map<string, WorkspaceFile[]>();
   const groupGroups = new Map<string, WorkspaceFile[]>();
@@ -134,15 +169,16 @@ function buildTabRows(files: WorkspaceFile[], botNames: Map<string, string>, gro
       main.push({ kind: 'file', file: f, label: f.path });
     }
   }
+  main.sort((a, b) => a.kind === 'file' && b.kind === 'file' ? byPin(a.file, b.file) : 0);
   const botRows: Row[] = [];
   for (const [id, fs] of [...botGroups.entries()].sort((a, b) => (botNames.get(a[0]) ?? a[0]).localeCompare(botNames.get(b[0]) ?? b[0]))) {
     botRows.push({ kind: 'subhead', label: botNames.get(id) ?? `Bot ${id.slice(0, 8)}` });
-    for (const f of fs) botRows.push({ kind: 'file', file: f, label: f.path.slice(`bots/${id}/`.length) });
+    for (const f of [...fs].sort(byPin)) botRows.push({ kind: 'file', file: f, label: f.path.slice(`bots/${id}/`.length) });
   }
   const groupRows: Row[] = [];
   for (const [id, fs] of [...groupGroups.entries()].sort((a, b) => (groupTitles.get(a[0]) ?? a[0]).localeCompare(groupTitles.get(b[0]) ?? b[0]))) {
     groupRows.push({ kind: 'subhead', label: groupTitles.get(id) ?? `Group ${id.slice(0, 8)}` });
-    for (const f of fs) groupRows.push({ kind: 'file', file: f, label: f.path.slice(`groups/${id}/`.length) });
+    for (const f of [...fs].sort(byPin)) groupRows.push({ kind: 'file', file: f, label: f.path.slice(`groups/${id}/`.length) });
   }
   return {
     main: main.length ? main : [{ kind: 'empty' }],
@@ -166,6 +202,8 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   tabs: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginBottom: tokens.space.md },
   previewText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 22 },
+  pin: { color: tokens.accent, fontSize: tokens.font.md, fontWeight: '700' },
+  rowActions: { flexDirection: 'row', gap: 20, marginTop: 8 },
   sub: { color: tokens.textMuted, fontSize: tokens.font.md, marginBottom: tokens.space.sm },
   wrap: { backgroundColor: tokens.bg, flex: 1 },
 });

@@ -1,6 +1,6 @@
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
 import { BotAvatar } from '../src/components/BotAvatar';
@@ -11,6 +11,7 @@ import { linkChatToProject } from '../src/lib/projects';
 import { addChatToHome, shortcutUri } from '../src/lib/shortcut';
 import { MenuButton } from '../src/components/Drawer';
 import { ComposerBar } from '../src/components/ComposerBar';
+import { AlertDialog, type AlertDialogButton } from '../src/components/AlertDialog';
 import LiveBrowserPanel, { LiveBrowserHandle } from '../src/components/LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../src/lib/liveBrowser';
 import { createGroupThread, deleteGroupThread, getPinnedThreads, listBots, listGroupMembers, listGroupMessages, listGroupThreads, renameGroupThread, togglePinThread } from '../src/lib/db';
@@ -55,9 +56,28 @@ export default function GroupScreen() {
 
   function requestApproval(summary: string, preview: string): Promise<boolean> {
     const translated = translateApproval(language, summary, preview);
-    return new Promise((resolve) => setPendingApproval({ summary: translated.summary, preview: translated.preview, resolve }));
+    return new Promise((resolve) => {
+      pendingApprovalRef.current = resolve;
+      setPendingApproval({ summary: translated.summary, preview: translated.preview, resolve });
+    });
   }
   const appliedThreadId = useRef<string | null>(null);
+  // Cancel (user order 2026-10-30), same as ChatView: while replies
+  // are loading, the composer's send button becomes a stop button.
+  // Aborting stops the provider call; an approval wait is released
+  // with "reject" so the loop can exit. Bots that already replied
+  // keep their replies; no error banner is shown for the stop.
+  const abortRef = useRef<AbortController | null>(null);
+  const pendingApprovalRef = useRef<((ok: boolean) => void) | null>(null);
+  function cancelSend() {
+    pendingApprovalRef.current?.(false);
+    pendingApprovalRef.current = null;
+    setPendingApproval(null);
+    abortRef.current?.abort();
+  }
+  // Themed dialogs (bug 2026-10-30): Alert.alert renders the system
+  // dialog, which ignores the app's dark mode and showed up white.
+  const [dialog, setDialog] = useState<{ title: string; message?: string; buttons: AlertDialogButton[] } | null>(null);
   // Live in-chat browser for the group thread, same rules as ChatView:
   // user intent opens it, bot [BROWSER ...] commands drive it, tap/type
   // wait for approval, login steps hand control to the user.
@@ -70,6 +90,7 @@ export default function GroupScreen() {
   const listRef = useRef<FlatList<GroupMessage> | null>(null);
   const stickToBottom = useRef(true);
   const scrolledOnce = useRef(false);
+  const scrollPending = useRef(false);
 
   useEffect(() => {
     const sub = Keyboard.addListener('keyboardDidShow', () => listRef.current?.scrollToEnd({ animated: true }));
@@ -82,7 +103,14 @@ export default function GroupScreen() {
   const prevMsgCount = useRef(0);
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
+      // Round 3 (bug 2026-10-30), same as ChatView: an immediate
+      // scroll runs before new rows are laid out, lands short, and
+      // the short landing flips stick off, so the layout correction
+      // never ran and the last reply's lines stayed below the
+      // composer. Arm a pending scroll plus a deferred one.
+      scrollPending.current = true;
       listRef.current?.scrollToEnd({ animated: scrolledOnce.current });
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 150);
       scrolledOnce.current = true;
     }
     prevMsgCount.current = messages.length;
@@ -130,6 +158,7 @@ export default function GroupScreen() {
     setFailedCode(null);
     setFailedText(null);
     setLoading(true);
+    abortRef.current = new AbortController();
     const text = raw;
     if (!textOverride) setInput('');
     // Optimistic user bubble (bug 2026-10-30): until now the list only
@@ -143,7 +172,7 @@ export default function GroupScreen() {
     }
     try {
       const prevIds = new Set(messages.map((m) => m.id));
-      await runGroupMessage(selected.id, members, text, setWorkingBot, reuseUser, requestApproval);
+      await runGroupMessage(selected.id, members, text, setWorkingBot, reuseUser, requestApproval, abortRef.current.signal);
       const updated = await listGroupMessages(selected.id);
       setMessages(updated);
       // Bot browser commands in the new replies drive the panel.
@@ -153,9 +182,13 @@ export default function GroupScreen() {
         }
       }
     } catch {
-      setFailedCode(503);
-      setFailedText(text);
+      // A cancelled turn is not a failure: no error banner, no retry.
+      if (!abortRef.current?.signal.aborted) {
+        setFailedCode(503);
+        setFailedText(text);
+      }
     } finally {
+      abortRef.current = null;
       setLoading(false);
       setWorkingBot(null);
     }
@@ -178,6 +211,13 @@ export default function GroupScreen() {
 
   return (
     <View style={styles.wrap}>
+      <AlertDialog
+        visible={dialog !== null}
+        title={dialog?.title ?? ''}
+        message={dialog?.message}
+        buttons={dialog?.buttons ?? []}
+        onDismiss={() => setDialog(null)}
+      />
       {selected ? (
         // Inside a thread there is deliberately NO Back button anymore:
         // the left control is the drawer menu, exactly like every other
@@ -202,7 +242,7 @@ export default function GroupScreen() {
               <Pressable
                 accessibilityLabel="Export chat as ZIP"
                 accessibilityRole="button"
-                onPress={async () => { try { await exportChatZip(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))); } catch { Alert.alert('Export failed', 'The ZIP could not be created. Try again.'); } }}
+                onPress={async () => { try { await exportChatZip(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))); } catch { setDialog({ title: 'Export failed', message: 'The ZIP could not be created. Try again.', buttons: [{ text: 'OK' }] }); } }}
                 style={styles.menuButton}
               >
                 <Feather name="file-text" size={20} color={tokens.text} />
@@ -238,7 +278,7 @@ export default function GroupScreen() {
           onTogglePin={async () => { setMenuPinned(await togglePinThread(selected.id)); }}
           onAddToProject={async (projectId) => { await linkChatToProject(projectId, 'group', selected.id, selected.title); }}
           onAddToHome={async () => addChatToHome(selected.title, shortcutUri('group', selected.id))}
-          onExportZip={async () => { try { await exportChatZip(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))); } catch { Alert.alert('Export failed', 'The ZIP could not be created. Try again.'); } }}
+          onExportZip={async () => { try { await exportChatZip(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))); } catch { setDialog({ title: 'Export failed', message: 'The ZIP could not be created. Try again.', buttons: [{ text: 'OK' }] }); } }}
           onDelete={async () => { await deleteGroupThread(selected.id); setSelected(null); refresh(); }}
         />
       )}
@@ -278,7 +318,7 @@ export default function GroupScreen() {
                   <Pressable style={styles.threadTitle} onPress={() => openThread(item)}>
                     <Text style={styles.name}>{item.title}</Text>
                   </Pressable>
-                  <Pressable accessibilityLabel={`Delete group ${item.title}`} onPress={() => Alert.alert('Delete this group?', 'Its messages are deleted too. This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await deleteGroupThread(item.id); refresh(); } }])}>
+                  <Pressable accessibilityLabel={`Delete group ${item.title}`} onPress={() => setDialog({ title: 'Delete this group?', message: 'Its messages are deleted too. This cannot be undone.', buttons: [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await deleteGroupThread(item.id); refresh(); } }] })}>
                     <Text style={styles.deleteText}>Delete</Text>
                   </Pressable>
                 </View>
@@ -302,7 +342,8 @@ export default function GroupScreen() {
               stickToBottom.current = contentSize.height - (layoutMeasurement.height + contentOffset.y) < 120;
             }}
             onContentSizeChange={() => {
-              if (stickToBottom.current) listRef.current?.scrollToEnd({ animated: scrolledOnce.current });
+              if (stickToBottom.current || scrollPending.current) listRef.current?.scrollToEnd({ animated: scrolledOnce.current });
+              scrollPending.current = false;
               scrolledOnce.current = true;
             }}
             renderItem={({ item }) => {
@@ -333,7 +374,7 @@ export default function GroupScreen() {
                   {item.role === 'assistant' && (
                     <Pressable
                       accessibilityLabel="Save as artifact"
-                      onPress={async () => { await saveArtifactFromReply(item.text); Alert.alert(t(language, 'saved'), t(language, 'savedToArtifacts')); }}
+                      onPress={async () => { await saveArtifactFromReply(item.text); setDialog({ title: t(language, 'saved'), message: t(language, 'savedToArtifacts'), buttons: [{ text: 'OK' }] }); }}
                     >
                       <Text style={styles.saveArtifact}>{t(language, 'saveAsArtifact')}</Text>
                     </Pressable>
@@ -364,8 +405,8 @@ export default function GroupScreen() {
               <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
               <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
               <View style={styles.approvalRow}>
-                <Button title={t(language, 'approve')} onPress={() => { pendingApproval.resolve(true); setPendingApproval(null); }} />
-                <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApproval.resolve(false); setPendingApproval(null); }} />
+                <Button title={t(language, 'approve')} onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(true); setPendingApproval(null); }} />
+                <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(false); setPendingApproval(null); }} />
               </View>
             </View>
           ) : null}
@@ -375,6 +416,7 @@ export default function GroupScreen() {
             placeholder={t(language, 'messageGroup')}
             loading={loading}
             onSend={() => { void send(); }}
+            onCancel={cancelSend}
             onAttachment={(att) => { void handleAttachment(att); }}
             onVoicePartial={(t) => { if (!voiceBase.current) voiceBase.current = input; setInput(voiceBase.current ? `${voiceBase.current} ${t}` : t); }}
             onVoiceFinal={(t) => { setInput(voiceBase.current ? `${voiceBase.current} ${t}`.trim() : t); voiceBase.current = ''; setVoiceNote(''); }}

@@ -71,10 +71,15 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const [language] = useLanguage();
 
+  // Drawer switches are sibling screens, not a drill-down: replace,
+  // never push. Pushing stacked every drawer hop, so the phone's
+  // back button replayed each opened screen before the app closed
+  // (complaint 2026-10-30). With replace, back from a drawer screen
+  // exits instead of revisiting the whole session.
   function go(route: string) {
     Keyboard.dismiss();
     onClose();
-    if (pathname !== route) router.push(route as never);
+    if (pathname !== route) router.replace(route as never);
   }
 
   function renderItem(item: DrawerItem) {
@@ -109,7 +114,18 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
         <Pressable
           accessibilityLabel="Start a new chat"
           accessibilityRole="button"
-          onPress={() => { onClose(); router.push({ pathname: '/', params: { chatId: `universal-${newId()}` } } as never); }}
+          onPress={() => {
+            onClose();
+            // New chat follows the section the user is already in
+            // (user order 2026-10-30): from a bot chat or the Bots
+            // list it opens Bots (pick a bot to start with), from a
+            // group it opens the new-group form, everywhere else a
+            // fresh Main Chat thread. It used to always open Main
+            // Chat, even from Bots or Group.
+            if (pathname === '/group') router.replace('/group' as never);
+            else if (pathname === '/bots' || pathname.startsWith('/chat/')) router.replace('/bots' as never);
+            else router.replace({ pathname: '/', params: { chatId: `universal-${newId()}` } } as never);
+          }}
           style={styles.newChatButton}
         >
           <Feather name="plus" size={18} color={tokens.onAccent} />

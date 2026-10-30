@@ -12,12 +12,13 @@ import { useTokens } from '../lib/tokens';
 //   Row 2: attach (+), model pill, then mic and send on the right.
 // Nothing floats outside the bar, so the input can never wrap a short
 // placeholder into two lines at normal phone width.
-export function ComposerBar({ input, onChangeText, placeholder, loading, onSend, onAttachment, onVoicePartial, onVoiceFinal, onVoiceError }: {
+export function ComposerBar({ input, onChangeText, placeholder, loading, onSend, onCancel, onAttachment, onVoicePartial, onVoiceFinal, onVoiceError }: {
   input: string;
   onChangeText: (t: string) => void;
   placeholder: string;
   loading?: boolean;
   onSend: () => void;
+  onCancel?: () => void;
   onAttachment: (att: { name: string; size: number | null; kind: 'photo' | 'document' }) => void;
   onVoicePartial: (t: string) => void;
   onVoiceFinal: (t: string) => void;
@@ -48,12 +49,11 @@ export function ComposerBar({ input, onChangeText, placeholder, loading, onSend,
           onError={onVoiceError}
         />
         <Pressable
-          accessibilityLabel="Send message"
-          disabled={loading}
-          onPress={onSend}
-          style={[styles.sendButton, loading && styles.sendDisabled]}
+          accessibilityLabel={loading ? 'Stop reply' : 'Send message'}
+          onPress={loading ? onCancel : onSend}
+          style={[styles.sendButton, loading && styles.sendStop]}
         >
-          <Feather name="send" size={18} color={tokens.onAccent} />
+          <Feather name={loading ? 'square' : 'send'} size={18} color={tokens.onAccent} />
         </Pressable>
       </View>
     </View>
@@ -65,5 +65,5 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   bar: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.lg, borderWidth: 1, marginTop: 8, paddingHorizontal: 12, paddingVertical: 10 },
   input: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 22, maxHeight: 160, minHeight: 44, paddingHorizontal: 4, paddingVertical: 8 },
   sendButton: { alignItems: 'center', backgroundColor: tokens.accent, borderRadius: 999, height: 40, justifyContent: 'center', width: 40 },
-  sendDisabled: { opacity: 0.5 },
+  sendStop: { backgroundColor: tokens.danger },
 });

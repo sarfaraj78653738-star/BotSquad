@@ -28,6 +28,7 @@ export async function runGroupMessage(
   onBotWorking?: (botName: string | null) => void,
   skipUserMessage = false,
   requestApproval?: (summary: string, preview: string) => Promise<boolean>,
+  signal?: AbortSignal,
 ): Promise<void> {
   // skipUserMessage: a Retry resends the failed text without adding a
   // second copy of the user's bubble to the thread.
@@ -46,7 +47,7 @@ export async function runGroupMessage(
   // Every group reply now carries this thread's title + member list.
   const threadTitle = (await listGroupThreads().catch(() => [])).find((x) => x.id === threadId)?.title ?? '';
   const memberList = members.map((m) => (m.role ? `${m.name} — ${m.role}` : m.name)).join('; ');
-  const groupBlock = `\n\n[THIS GROUP — you are replying inside a group chat, not a 1:1 chat.${threadTitle ? ` Group title: "${threadTitle}".` : ''} Members of THIS group: ${memberList}. When the user asks who is in this group or what anyone's role is, answer from this list — never say you do not have it.]`;
+  const groupBlock = `\n\n[THIS GROUP — you are replying inside a group chat, not a 1:1 chat.${threadTitle ? ` Group title: "${threadTitle}".` : ''} Members of THIS group: ${memberList}. When the user asks who is in this group or what anyone's role is, answer from this list — never say you do not have it. Answer in your own words as your own role; never just copy the member list.]`;
   // Skill callout, same model as single chats: a skill named at the
   // start of the message applies to every bot for this turn only.
   const callout = parseSkillCallout(userText.trim(), await listSkills());
@@ -87,8 +88,10 @@ export async function runGroupMessage(
 
   // Role-based auto-adopt (user order 2026-10-30): every bot replying to
   // every message was noise. Only bots whose role/task words appear in
-  // the message take the turn; if none match (a greeting, a group
-  // question), all reply so the group never goes silent.
+  // the message take the turn; if none match, ONLY the first member
+  // replies — a chorus of near-identical answers to one question
+  // (complaint 2026-10-30) is worse than one answer. A user who wants
+  // several bots names their roles in the message, and those match.
   const roleScore = (b: Bot, text: string) => {
     const lower = text.toLowerCase();
     const words = new Set(`${b.role} ${b.task}`.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
@@ -97,8 +100,11 @@ export async function runGroupMessage(
     return score;
   };
   const scoredMembers = members.map((m) => ({ bot: m, score: roleScore(m, pluginEffectiveText) }));
-  const activeMembers = scoredMembers.some((s) => s.score > 0) ? scoredMembers.filter((s) => s.score > 0).map((s) => s.bot) : members;
+  const activeMembers = scoredMembers.some((s) => s.score > 0) ? scoredMembers.filter((s) => s.score > 0).map((s) => s.bot) : (members.length ? [members[0]] : members);
   for (const bot of activeMembers) {
+    // Cancel (user order 2026-10-30): a stopped turn ends here — no
+    // further bot is started, and no error note is saved for the stop.
+    if (signal?.aborted) break;
     onBotWorking?.(bot.name);
     try {
       const memory = await listMemory(bot.id);
@@ -122,7 +128,7 @@ export async function runGroupMessage(
         botToolsPrompt += `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
       }
       const approve = requestApproval ?? (async () => false);
-      let reply = await chatWithBot(bot, system + botToolsPrompt, history, pluginEffectiveText);
+      let reply = await chatWithBot(bot, system + botToolsPrompt, history, pluginEffectiveText, signal);
       {
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
@@ -163,7 +169,7 @@ export async function runGroupMessage(
           loopHistory.push({ role: 'assistant', text: reply });
           loopHistory.push({ role: 'user', text: results.join('\n\n') });
           if (step === 7) break;
-          reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.');
+          reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.', signal);
         }
         reply = stripToolBlocks(reply);
         if (!reply) reply = actionsTaken.length ? `Done. Used: ${actionsTaken.join('; ')}.` : 'Done.';
@@ -173,6 +179,9 @@ export async function runGroupMessage(
       const msg: GroupMessage = { id: newId(), threadId, botId: bot.id, role: 'assistant', text: reply, approvalState: null, createdAt: nowIso() };
       await addGroupMessage(msg);
     } catch (e) {
+      // A user-cancelled turn saves nothing: no error note, and the
+      // loop stops — bots that already replied keep their replies.
+      if (signal?.aborted) break;
       // A failed bot reply shows ONLY a number — never a sentence,
       // never raw provider text. The bot's name is the message label.
       const note: GroupMessage = {
