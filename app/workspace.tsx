@@ -199,7 +199,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   tabActive: { backgroundColor: tokens.text },
   tabText: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '600', textAlign: 'center' },
   tabTextActive: { color: tokens.surface },
-  tabs: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  tabs: { flexDirection: 'row', gap: 8, marginBottom: 16, marginTop: 12 },
   note: { color: tokens.textMuted, fontSize: tokens.font.sm, marginBottom: tokens.space.md },
   previewText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 22 },
   pin: { color: tokens.accent, fontSize: tokens.font.md, fontWeight: '700' },
