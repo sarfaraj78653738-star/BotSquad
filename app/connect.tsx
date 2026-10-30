@@ -3,11 +3,11 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
-import { deleteConnection, listBotConnectionIds, listBots, listConnections, saveConnection, toggleBotConnection } from '../src/lib/db';
+import { deleteConnection, listConnections, saveConnection } from '../src/lib/db';
 import { deleteConnectionToken, getConnectionToken, setConnectionToken } from '../src/lib/connections';
 import { CONNECTION_CATALOG, CONNECTION_CATEGORIES, COMING_SOON_SERVICES, catalogFor, CatalogService } from '../src/lib/connectionCatalog';
 import { verifyConnection } from '../src/lib/connectionVerify';
-import { Bot, Connection, newId, nowIso } from '../src/lib/types';
+import { Connection, newId, nowIso } from '../src/lib/types';
 import { useLanguage, useTokens } from '../src/lib/tokens';
 import { t } from '../src/lib/i18n';
 
@@ -33,7 +33,6 @@ export default function ConnectScreen() {
   const [language] = useLanguage();
   const styles = getStyles(tokens);
   const router = useRouter();
-  const [bots, setBots] = useState<Bot[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [query, setQuery] = useState('');
   const [view, setView] = useState<ConnectView>({ kind: 'list' });
@@ -48,11 +47,9 @@ export default function ConnectScreen() {
 
   // Detail state
   const [detailHasKey, setDetailHasKey] = useState(false);
-  const [detailEnabledBots, setDetailEnabledBots] = useState<string[]>([]);
   const [detailToken, setDetailToken] = useState('');
 
   const refresh = useCallback(() => {
-    listBots().then(setBots).catch(() => {});
     listConnections().then(setConnections).catch(() => {});
   }, []);
   useFocusEffect(refresh);
@@ -61,11 +58,6 @@ export default function ConnectScreen() {
     setView({ kind: 'detail', conn });
     setDetailToken('');
     try { setDetailHasKey((await getConnectionToken(conn.id)) !== null); } catch { setDetailHasKey(false); }
-    const enabled: string[] = [];
-    for (const b of bots) {
-      try { if ((await listBotConnectionIds(b.id)).includes(conn.id)) enabled.push(b.id); } catch { /* ignore */ }
-    }
-    setDetailEnabledBots(enabled);
   }
 
   function openAdd(service: CatalogService | null) {
@@ -266,18 +258,7 @@ export default function ConnectScreen() {
                 <Button title={t(language, 'saveKeyBtn')} onPress={async () => { if (!detailToken.trim()) return; await setConnectionToken(view.conn.id, detailToken); setDetailToken(''); setDetailHasKey(true); }} />
               </>
             )}
-            <Text style={styles.sectionTitle}>{t(language, 'enabledFor')}</Text>
-            {bots.length === 0 && <Text style={styles.sub}>{t(language, 'noBotsFirst')}</Text>}
-            {bots.map((b) => {
-              const on = detailEnabledBots.includes(b.id);
-              return (
-                <Card key={b.id}>
-                  <Text style={styles.rowTitle}>{b.name}</Text>
-                  <View style={{ height: 8 }} />
-                  <Button title={on ? t(language, 'enabledBtn') : t(language, 'enableBtn')} variant={on ? 'primary' : 'secondary'} onPress={async () => { await toggleBotConnection(b.id, view.conn.id, !on); setDetailEnabledBots(on ? detailEnabledBots.filter((x) => x !== b.id) : [...detailEnabledBots, b.id]); }} />
-                </Card>
-              );
-            })}
+            <Text style={styles.sub}>Available to Main Chat, all bots, and all groups — no per-bot setup needed.</Text>
             <View style={{ height: 12 }} />
             <Button title={t(language, 'deleteConnectionBtn')} variant="danger" onPress={() => Alert.alert(t(language, 'deleteConnectionTitle'), `${view.conn.name} ${t(language, 'deleteConnectionBody')}`, [
               { text: t(language, 'cancel'), style: 'cancel' },

@@ -6,7 +6,7 @@ import { AdSlot, Button, LoadingRow } from './ui';
 import { ComposerBar } from './ComposerBar';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBotConnectionIds, listBots, listConnections, listMcpServers, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
+import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBots, listConnections, listMcpServers, listMemory, listMessages, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
 import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
@@ -303,16 +303,16 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         mcpBlock = mcpPromptBlock(mcpCallout.server.name, mcpTools, true);
       }
       // Connection callout, same model as skills/MCP: "/github ..."
-      // or "GitHub, ..." grants that connection for this turn only,
-      // on top of the bot's standing-enabled connections. Main Chat
-      // ignores the distinction (all connections are already there).
+      // or "GitHub, ..." grants that connection for this turn only.
+      // Connectors are auto-enabled (user order 2026-10-30): bot
+      // chats see ALL verified connections, like Main Chat — the old
+      // per-bot toggles no longer gate anything.
       const connCallout = parseConnectionCallout(mcpEffectiveText, await listConnections());
       const connEffectiveText = connCallout.connection ? connCallout.cleanText : mcpEffectiveText;
       const profilePrefs = (await getSetting('profile_preferences')) ?? '';
-      const connIds = universal ? [] : await listBotConnectionIds(bot.id);
-      const enabledConns = connIds.length
-        ? (await listConnections()).filter((c) => connIds.includes(c.id)).map((c) => ({ name: c.name, service: c.service }))
-        : [];
+      const enabledConns = universal
+        ? []
+        : (await listConnections()).map((c) => ({ name: c.name, service: c.service }));
       const effectiveConns = connCallout.connection && !enabledConns.some((c) => c.service === connCallout.connection!.service && c.name === connCallout.connection!.name)
         ? [...enabledConns, { name: connCallout.connection.name, service: connCallout.connection.service }]
         : enabledConns;
