@@ -1,6 +1,6 @@
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
 import { BotAvatar } from '../src/components/BotAvatar';
@@ -63,6 +63,18 @@ export default function GroupScreen() {
   // wait for approval, login steps hand control to the user.
   const browserRef = useRef<LiveBrowserHandle>(null);
   const [browserExpanded, setBrowserExpanded] = useState(false);
+  // Auto-scroll, same bug and same fix as ChatView (2026-10-30): the
+  // group list never scrolled on its own, so the latest message hid
+  // behind the composer when the keyboard opened. Sticks to the bottom
+  // unless the user scrolled up to read old messages.
+  const listRef = useRef<FlatList<GroupMessage> | null>(null);
+  const stickToBottom = useRef(true);
+  const scrolledOnce = useRef(false);
+
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => listRef.current?.scrollToEnd({ animated: true }));
+    return () => sub.remove();
+  }, []);
 
   const refresh = useCallback(() => {
     listBots().then(setBots).catch(() => {});
@@ -253,8 +265,19 @@ export default function GroupScreen() {
         <View style={styles.body}>
           <Text style={styles.sub}>Bots: {members.map((m) => m.name).join(', ') || 'none'}</Text>
           {browserExpanded ? null : <FlatList
+            ref={listRef}
             data={messages}
             keyExtractor={(m) => m.id}
+            style={{ flex: 1 }}
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              stickToBottom.current = contentSize.height - (layoutMeasurement.height + contentOffset.y) < 120;
+            }}
+            onContentSizeChange={() => {
+              if (stickToBottom.current) listRef.current?.scrollToEnd({ animated: scrolledOnce.current });
+              scrolledOnce.current = true;
+            }}
             renderItem={({ item }) => {
               if (item.role === 'user') {
                 return (

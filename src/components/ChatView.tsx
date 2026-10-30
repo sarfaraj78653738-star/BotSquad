@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AdSlot, Button, LoadingRow } from './ui';
@@ -91,6 +91,22 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
   // its WebView; this screen only feeds it requests.
   const browserRef = useRef<LiveBrowserHandle>(null);
   const [browserExpanded, setBrowserExpanded] = useState(false);
+  // Auto-scroll: the list NEVER scrolled on its own, so when the
+  // keyboard opened (or a reply arrived) the latest message sat hidden
+  // behind the composer (bug 2026-10-30). The list now sticks to the
+  // bottom: new content scrolls into view, and opening the keyboard
+  // jumps to the latest message. If the user scrolled up to read old
+  // messages, stick turns off so a reply never yanks them; scrolling
+  // back near the bottom turns it on again.
+  const listRef = useRef<FlatList<Message> | null>(null);
+  const stickToBottom = useRef(true);
+  const scrolledOnce = useRef(false);
+  const scrollToBottom = (animated: boolean) => listRef.current?.scrollToEnd({ animated });
+
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => scrollToBottom(true));
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -440,10 +456,20 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       {topBar(bot, headerActions)}
       <AdSlot visible={!adsRemoved && loading} />
       {browserExpanded ? null : <FlatList
+        ref={listRef}
         data={messages}
         keyExtractor={(m) => m.id}
         style={styles.list}
         contentContainerStyle={styles.listContent}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          stickToBottom.current = contentSize.height - (layoutMeasurement.height + contentOffset.y) < 120;
+        }}
+        onContentSizeChange={() => {
+          if (stickToBottom.current) scrollToBottom(scrolledOnce.current);
+          scrolledOnce.current = true;
+        }}
         renderItem={({ item }) => {
           if (item.role === 'user') {
             return (
