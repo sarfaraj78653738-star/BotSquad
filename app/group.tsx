@@ -17,7 +17,7 @@ import { createGroupThread, deleteGroupThread, getPinnedThreads, listBots, listG
 import { runGroupMessage } from '../src/lib/group';
 import { isRawErrorText } from '../src/lib/errors';
 import { saveArtifactFromReply } from '../src/lib/projects';
-import { Bot, GroupMessage, GroupThread } from '../src/lib/types';
+import { Bot, GroupMessage, GroupThread, newId, nowIso } from '../src/lib/types';
 import { useLanguage, useTokens } from '../src/lib/tokens';
 import { t, translateApproval } from '../src/lib/i18n';
 
@@ -132,6 +132,15 @@ export default function GroupScreen() {
     setLoading(true);
     const text = raw;
     if (!textOverride) setInput('');
+    // Optimistic user bubble (bug 2026-10-30): until now the list only
+    // refreshed AFTER every bot replied, so the user's own message was
+    // invisible for the whole "X is replying…" wait and only appeared
+    // with the replies. Show it at once; the final reload replaces it
+    // with the saved copy. The same-text guard keeps a Retry from
+    // doubling a bubble that is already on screen.
+    if (!messages.some((m) => m.role === 'user' && m.text === text.trim())) {
+      setMessages((prev) => [...prev, { id: newId(), threadId: selected.id, botId: null, role: 'user', text: text.trim(), approvalState: null, createdAt: nowIso() }]);
+    }
     try {
       const prevIds = new Set(messages.map((m) => m.id));
       await runGroupMessage(selected.id, members, text, setWorkingBot, reuseUser, requestApproval);
