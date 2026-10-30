@@ -234,7 +234,10 @@ export default function GroupScreen() {
                 <View style={styles.row}>
                   <BotAvatar variant={avatarFor(b.id, b.avatar)} size={36} />
                   <CheckBox selected={picked.includes(b.id)} />
-                  <Text style={styles.name}>{b.name}, {b.role}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.name}>{b.name}</Text>
+                    {b.role ? <Text style={styles.roleText}>{b.role}</Text> : null}
+                  </View>
                 </View>
               </Card>
             </Pressable>
@@ -385,6 +388,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   input: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, color: tokens.text, fontSize: tokens.font.md, marginBottom: 12, padding: 14 },
   name: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
+  roleText: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 2 },
   newChatButton: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
   newChatText: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   row: { alignItems: 'center', flexDirection: 'row', gap: 10 },
