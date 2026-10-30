@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Field } from '../src/components/ui';
+import { AlertDialog, type AlertDialogButton } from '../src/components/AlertDialog';
 import { getApiKey, setApiKey } from '../src/lib/keys';
 import { getUniversal, parseContextWindow, setUniversal, UniversalConfig } from '../src/lib/universal';
 import { deleteModelSetup, listModelSetups, saveModelSetup, ModelSetup } from '../src/lib/modelSetups';
@@ -35,6 +36,7 @@ export default function ModelSetupScreen() {
   const [msg, setMsg] = useState('');
   const [savedSetups, setSavedSetups] = useState<ModelSetup[]>([]);
   const [active, setActive] = useState<UniversalConfig | null>(null);
+  const [dialog, setDialog] = useState<{ title: string; message?: string; buttons: AlertDialogButton[] } | null>(null);
 
   const refreshSaved = useCallback(async () => {
     try {
@@ -44,15 +46,14 @@ export default function ModelSetupScreen() {
     } catch { /* list stays as it was */ }
   }, []);
 
+  // The form ALWAYS opens empty (user order 2026-10-30): it is for
+  // adding a new model, and the list below (with its Active badge)
+  // is where saved models live. It used to load the active model's
+  // values into the form on open, so a saved model looked
+  // "auto-filled" and a careless Save could overwrite it. The only
+  // way values enter the form now is an explicit tap: a provider chip
+  // (that provider's key) or a saved row's Use button.
   useEffect(() => {
-    (async () => {
-      const u = await getUniversal();
-      setProvider(u.provider);
-      setEndpoint(u.endpoint);
-      setModel(u.model);
-      setContextWindow(String(u.contextWindow));
-      setApiKeyState((await getApiKey(u.provider)) ?? '');
-    })().catch(() => {});
     refreshSaved().catch(() => {});
   }, [refreshSaved]);
 
@@ -90,8 +91,7 @@ export default function ModelSetupScreen() {
     // delete it); only a later Save with an empty key field would.
     // Context is left EMPTY on purpose (user order 2026-10-30): no
     // silent 8192 default — save rejects a blank window, so the next
-    // model must type its own. (Loading the active model's values on
-    // open, and via Use, is not a default — those are saved values.)
+    // model must type its own.
     setProvider('openai-compatible');
     setApiKeyState('');
     setEndpoint('');
@@ -114,22 +114,36 @@ export default function ModelSetupScreen() {
   }
 
   function deleteSetup(s: ModelSetup) {
-    Alert.alert(t(language, 'deleteSavedTitle'), `${s.model} ${t(language, 'willBeRemovedList')}`, [
-      { text: t(language, 'cancel'), style: 'cancel' },
-      {
-        text: t(language, 'delete'), style: 'destructive',
-        onPress: async () => {
-          // The active chat config is left untouched: deleting a row only
-          // removes it from the list, it does not switch the active model.
-          await deleteModelSetup(s.id);
-          await refreshSaved();
+    // Themed dialog, not Alert.alert: the system dialog ignored the
+    // app's dark mode and showed up white (bug 2026-10-30).
+    setDialog({
+      title: t(language, 'deleteSavedTitle'),
+      message: `${s.model} ${t(language, 'willBeRemovedList')}`,
+      buttons: [
+        { text: t(language, 'cancel'), style: 'cancel' },
+        {
+          text: t(language, 'delete'),
+          style: 'destructive',
+          onPress: async () => {
+            // The active chat config is left untouched: deleting a row only
+            // removes it from the list, it does not switch the active model.
+            await deleteModelSetup(s.id);
+            await refreshSaved();
+          },
         },
-      },
-    ]);
+      ],
+    });
   }
 
   return (
     <View style={styles.wrap}>
+      <AlertDialog
+        visible={dialog !== null}
+        title={dialog?.title ?? ''}
+        message={dialog?.message}
+        buttons={dialog?.buttons ?? []}
+        onDismiss={() => setDialog(null)}
+      />
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
           <Feather name="chevron-left" size={22} color={tokens.text} />
