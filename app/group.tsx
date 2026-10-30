@@ -391,7 +391,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   approvalPreview: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 6 },
   approvalRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   approvalSummary: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600', marginTop: 4 },
-  approvalBot: { color: tokens.muted, fontSize: tokens.font.md, fontWeight: '700', marginTop: 2 },
+  approvalBot: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '700', marginTop: 2 },
   approvalTitle: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800' },
   assistantRow: { marginBottom: 20 },
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
