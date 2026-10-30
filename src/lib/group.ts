@@ -108,7 +108,7 @@ export async function runGroupMessage(
       // only for a service enabled for this bot or called out this
       // turn. Without an approval callback (should not happen from
       // group.tsx), gated calls are refused rather than run blind.
-      let botToolsPrompt = BOT_FILE_TOOLS_PROMPT;
+      let botToolsPrompt = BOT_FILE_TOOLS_PROMPT + `\n\n[YOUR WORKSPACE SECTION — your files live under "groups/${threadId}/". Use plain filenames like "index.html"; they are saved into your section automatically, and listing shows only your section. You cannot see Main Chat's or other groups' files.]`;
       if (effectiveConns.length) {
         botToolsPrompt += `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
       }
@@ -118,18 +118,19 @@ export async function runGroupMessage(
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
-          const calls = parseToolCalls(reply).filter((c) => FILE_TOOL_NAMES.includes(c.name) || c.name === 'mcp_call' || c.name === 'service_request');
+          const calls = parseToolCalls(reply).filter((c) => FILE_TOOL_NAMES.includes(c.name) || c.name === 'vercel_deploy' || c.name === 'mcp_call' || c.name === 'service_request');
           if (calls.length === 0) break;
           const results: string[] = [];
           for (const call of calls) {
             const argStr = (k: string) => typeof call.args[k] === 'string' ? call.args[k] as string : '';
             let result: string;
-            if (FILE_TOOL_NAMES.includes(call.name)) {
-              // Workspace file tools: same approval-gated path as Main
-              // Chat (writes/edits/deletes pause at the approval card,
-              // which group.tsx labels with the replying bot's name).
-              result = await executeAgentTool(call, approve);
-              actionsTaken.push(`${call.name} ${argStr('path') || argStr('query') || argStr('url')}`);
+            if (FILE_TOOL_NAMES.includes(call.name) || call.name === 'vercel_deploy') {
+              // Workspace file tools + deploy: same approval-gated
+              // path as Main Chat (writes/edits/deletes/deploys pause
+              // at the approval card, which group.tsx labels with the
+              // replying bot's name), confined to this group's section.
+              result = await executeAgentTool(call, approve, { section: `groups/${threadId}` });
+              actionsTaken.push(call.name === 'vercel_deploy' ? 'vercel_deploy' : `${call.name} ${argStr('path') || argStr('query') || argStr('url')}`);
             } else if (call.name === 'mcp_call') {
               const srv = argStr('server');
               if (!mcpCallout.server || srv.toLowerCase() !== mcpCallout.server.name.toLowerCase()) {

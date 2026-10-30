@@ -41,10 +41,11 @@ Rules: never invent file contents you have not read; paths stay inside the works
 `;
 
 // Workspace file tools for bot and group chats (user order 2026-10-30):
-// the same file tools Main Chat has, minus deploy — vercel_deploy stays
-// Main Chat only (publishing is public). Writes/edits/deletes still pause
-// at the chat's approval card, and the loop filter is what keeps any other
-// tool out of these chats.
+// the same file tools Main Chat has, including deploy (vercel_deploy
+// enabled for bot/group chats on the user's explicit 2026-10-30 order:
+// "whatever Main Chat can do, bot and group can do"). Writes/edits/
+// deletes/deploys still pause at the chat's approval card, and the loop
+// filter is what keeps any other tool out of these chats.
 export const FILE_TOOL_NAMES = ['list_files', 'read_file', 'search_files', 'write_file', 'edit_file', 'delete_file', 'browser_read'];
 
 export const BOT_FILE_TOOLS_PROMPT = `
@@ -59,7 +60,8 @@ export const BOT_FILE_TOOLS_PROMPT = `
 - edit_file {path, old_text, new_text}: replace text in a workspace file. Runs ONLY after the user approves that exact change.
 - delete_file {path}: delete a workspace file. Runs ONLY after the user approves it.
 - browser_read {url}: read a PUBLIC web page as text (no logins, paywalls, or CAPTCHAs).
-Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, tests, or git on this phone, and you cannot publish or deploy a site — publishing stays in Main Chat; say so plainly if asked.]`;
+- vercel_deploy {files, project?}: publish workspace files as a live production site on Vercel. Runs ONLY after the user approves the deploy, and only when Vercel is connected. Returns the live URL.
+Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, tests, or git on this phone; say so plainly if asked.]`;
 
 export function parseToolCalls(reply: string): AgentToolCall[] {
   const calls: AgentToolCall[] = [];
@@ -90,16 +92,32 @@ function argString(args: Record<string, unknown>, key: string): string {
 export async function executeAgentTool(
   call: AgentToolCall,
   approve: (summary: string, preview: string) => Promise<boolean>,
+  opts?: { section?: string },
 ): Promise<string> {
+  // Section scoping (user order 2026-10-30): bot chats work under
+  // "bots/<botId>/", group chats under "groups/<threadId>/", Main Chat
+  // has no section and sees everything. A sectioned caller can only
+  // touch its own section: plain paths are rewritten into it, and
+  // paths that already start with it pass through — so a bot or group
+  // can never see or overwrite Main Chat's or another chat's files.
+  const section = opts?.section ?? '';
+  const sectionPath = (raw: string): string | null => {
+    const cleaned = safeWorkspacePath(raw);
+    if (!cleaned) return null;
+    if (!section) return cleaned;
+    if (cleaned === section || cleaned.startsWith(`${section}/`)) return cleaned;
+    return `${section}/${cleaned}`;
+  };
   switch (call.name) {
     case 'list_files': {
-      const prefix = argString(call.args, 'path');
+      const rawPrefix = argString(call.args, 'path');
+      const prefix = section ? (rawPrefix ? `${section}/${rawPrefix}` : `${section}/`) : rawPrefix;
       const files = await listWorkspaceFiles();
       const filtered = prefix ? files.filter((f) => f.path.startsWith(prefix)) : files;
       return filtered.length ? filtered.map((f) => `${f.path} (${f.size} bytes)`).join('\n') : '(workspace is empty)';
     }
     case 'read_file': {
-      const p = safeWorkspacePath(argString(call.args, 'path'));
+      const p = sectionPath(argString(call.args, 'path'));
       if (!p) return 'Error: invalid path (paths stay inside the workspace, no "..").';
       try { return await readWorkspaceFile(p); }
       catch { return 'Error: could not read that file (it may not exist).'; }
@@ -108,8 +126,9 @@ export async function executeAgentTool(
       const query = argString(call.args, 'query');
       if (!query) return 'Error: search_files needs a query.';
       const files = await listWorkspaceFiles();
+      const scoped = section ? files.filter((f) => f.path.startsWith(`${section}/`)) : files;
       const hits: string[] = [];
-      for (const f of files) {
+      for (const f of scoped) {
         try {
           const text = await readWorkspaceFile(f.path);
           const lines = text.split('\n');
@@ -123,7 +142,7 @@ export async function executeAgentTool(
       return hits.length ? hits.join('\n') : `(no matches for "${query}")`;
     }
     case 'write_file': {
-      const p = safeWorkspacePath(argString(call.args, 'path'));
+      const p = sectionPath(argString(call.args, 'path'));
       const content = argString(call.args, 'content');
       if (!p) return 'Error: invalid path.';
       if (!content) return 'Error: write_file needs content.';
@@ -133,7 +152,7 @@ export async function executeAgentTool(
       return `Wrote ${p} (${content.length} chars).`;
     }
     case 'edit_file': {
-      const p = safeWorkspacePath(argString(call.args, 'path'));
+      const p = sectionPath(argString(call.args, 'path'));
       const oldText = argString(call.args, 'old_text');
       const newText = argString(call.args, 'new_text');
       if (!p || !oldText) return 'Error: edit_file needs path and old_text.';
@@ -147,7 +166,7 @@ export async function executeAgentTool(
       return `Edited ${p}.`;
     }
     case 'delete_file': {
-      const p = safeWorkspacePath(argString(call.args, 'path'));
+      const p = sectionPath(argString(call.args, 'path'));
       if (!p) return 'Error: invalid path.';
       const ok = await approve(`Delete ${p}`, 'This file will be removed from the workspace.');
       if (!ok) return 'Rejected by user.';
@@ -182,11 +201,11 @@ export async function executeAgentTool(
     }
     case 'vercel_deploy': {
       const rawFiles = call.args.files;
-      const files = Array.isArray(rawFiles)
+      const files = (Array.isArray(rawFiles)
         ? rawFiles.filter((f): f is string => typeof f === 'string')
         : typeof rawFiles === 'string'
           ? rawFiles.split(/[,\n]/).map((f) => f.trim()).filter(Boolean)
-          : [];
+          : []).map((f) => sectionPath(f)).filter((f): f is string => f !== null);
       const project = argString(call.args, 'project');
       if (!files.length) return 'Error: vercel_deploy needs files (workspace paths).';
       const ok = await approve('Deploy to Vercel', `Files: ${files.join(', ')}\nThis publishes the site live at a public URL.`);

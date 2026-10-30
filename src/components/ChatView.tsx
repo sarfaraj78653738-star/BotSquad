@@ -363,14 +363,14 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
         // 2026-10-30): a bot can run MCP tools, its enabled
         // connections, AND workspace file tools, not just Main Chat.
         // Skills already work here via callout. The loop runs file
-        // tools, mcp_call, and service_request, each approval-gated;
-        // deploy stays Main Chat only, and any other tool block is
-        // stripped, never executed. Guards: mcp_call
+        // tools, deploy, mcp_call, and service_request, each
+        // approval-gated; any other tool block is stripped, never
+        // executed. Guards: mcp_call
         // only for the server called out this turn; service_request
         // only for a service enabled for this bot or called out this
         // turn — anything else returns an error result and never
         // executes.
-        let botToolsPrompt = BOT_FILE_TOOLS_PROMPT;
+        let botToolsPrompt = BOT_FILE_TOOLS_PROMPT + `\n\n[YOUR WORKSPACE SECTION — your files live under "bots/${bot.id}/". Use plain filenames like "index.html"; they are saved into your section automatically, and listing shows only your section. You cannot see Main Chat's or other bots' files.]`;
         if (effectiveConns.length) {
           botToolsPrompt += `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
         }
@@ -379,17 +379,17 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
           const loopHistory: { role: string; text: string }[] = [];
           const actionsTaken: string[] = [];
           for (let step = 0; step < 8; step++) {
-            const calls = parseToolCalls(reply).filter((c) => FILE_TOOL_NAMES.includes(c.name) || c.name === 'mcp_call' || c.name === 'service_request');
+            const calls = parseToolCalls(reply).filter((c) => FILE_TOOL_NAMES.includes(c.name) || c.name === 'vercel_deploy' || c.name === 'mcp_call' || c.name === 'service_request');
             if (calls.length === 0) break;
             const results: string[] = [];
             for (const call of calls) {
               const argStr = (k: string) => typeof call.args[k] === 'string' ? call.args[k] as string : '';
               let result: string;
-              if (FILE_TOOL_NAMES.includes(call.name)) {
-                // Workspace file tools: same approval-gated path as
-                // Main Chat (writes/edits/deletes pause at the card).
-                result = await executeAgentTool(call, requestApproval);
-                actionsTaken.push(`${call.name} ${argStr('path') || argStr('query') || argStr('url')}`);
+              if (FILE_TOOL_NAMES.includes(call.name) || call.name === 'vercel_deploy') {
+                // Workspace file tools + deploy: same approval-gated
+                // path as Main Chat, confined to this bot's section.
+                result = await executeAgentTool(call, requestApproval, { section: `bots/${bot.id}` });
+                actionsTaken.push(call.name === 'vercel_deploy' ? 'vercel_deploy' : `${call.name} ${argStr('path') || argStr('query') || argStr('url')}`);
               } else if (call.name === 'mcp_call') {
                 const srv = argStr('server');
                 if (!mcpCallout.server || srv.toLowerCase() !== mcpCallout.server.name.toLowerCase()) {

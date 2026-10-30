@@ -24,6 +24,7 @@ export default function BotEditScreen() {
     provider: 'openai-compatible', model: 'gpt-4o-mini', isPinned: 0, createdAt: nowIso(), updatedAt: nowIso(),
   });
   const [memory, setMemory] = useState<MemoryNote[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -58,9 +59,17 @@ export default function BotEditScreen() {
       <Field label={t(language, 'nameLabel')} onChangeText={(v) => setBot({ ...bot, name: v })} value={bot.name} />
       <Field label={t(language, 'roleLabel')} onChangeText={(v) => setBot({ ...bot, role: v })} value={bot.role} />
       <Field label={t(language, 'taskLabel')} multiline onChangeText={(v) => setBot({ ...bot, task: v })} value={bot.task} />
-      <Field label={t(language, 'personalityLabel')} multiline onChangeText={(v) => setBot({ ...bot, personality: v })} value={bot.personality} />
-      <Field label={t(language, 'instructionsLabel')} multiline onChangeText={(v) => setBot({ ...bot, instructions: v })} value={bot.instructions} />
-      <Field label={t(language, 'boundariesLabel')} multiline onChangeText={(v) => setBot({ ...bot, boundaries: v })} value={bot.boundaries} />
+      <Pressable onPress={() => setShowAdvanced(!showAdvanced)} style={styles.advancedRow}>
+        <Text style={styles.advancedText}>Advanced</Text>
+        <Feather name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={20} color={tokens.text} />
+      </Pressable>
+      {showAdvanced && (
+        <View>
+          <Field label={t(language, 'personalityLabel')} multiline onChangeText={(v) => setBot({ ...bot, personality: v })} value={bot.personality} />
+          <Field label={t(language, 'instructionsLabel')} multiline onChangeText={(v) => setBot({ ...bot, instructions: v })} value={bot.instructions} />
+          <Field label={t(language, 'boundariesLabel')} multiline onChangeText={(v) => setBot({ ...bot, boundaries: v })} value={bot.boundaries} />
+        </View>
+      )}
       <Button title={t(language, 'saveBotBtn')} onPress={save} />
       {!isNew && (
         <View style={{ marginTop: 24 }}>
@@ -82,6 +91,8 @@ export default function BotEditScreen() {
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
+  advancedRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
+  advancedText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
   backRow: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingVertical: 6 },
   backText: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600' },
   body: { flex: 1, padding: tokens.space.md },
