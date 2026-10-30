@@ -30,7 +30,7 @@ export default function AdsPaymentsScreen() {
         <Text style={styles.headerTitle}>{t(language, 'adsPayments')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={styles.sectionTitle}>{t(language, 'currentPlan')}</Text>
         <Card>
           <Text style={styles.bold}>{t(language, 'freePlan')}</Text>

@@ -63,7 +63,7 @@ export default function GithubInstallScreen() {
         <Text style={styles.headerTitle}>{t(language, 'githubInstall')}</Text>
         <View style={{ width: 84 }} />
       </View>
-    <ScrollView style={styles.body}>
+    <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
       <Text style={styles.sub}>{t(language, 'ghIntro')}</Text>
       {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
       <Field label={t(language, 'ghUrlLabel')} onChangeText={setGhUrl} placeholder="https://github.com/owner/repo" value={ghUrl} />

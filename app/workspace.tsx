@@ -46,7 +46,7 @@ export default function WorkspaceScreen() {
         {preview.uri ? (
           <WebView source={{ uri: preview.uri }} javaScriptEnabled allowFileAccess originWhitelist={['*']} style={{ flex: 1 }} />
         ) : (
-          <ScrollView style={styles.body}>
+          <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
             <Text style={styles.previewText}>{preview.text}</Text>
           </ScrollView>
         )}

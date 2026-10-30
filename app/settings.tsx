@@ -187,7 +187,7 @@ export default function SettingsScreen() {
         <Text style={styles.headerTitle}>{t(language, 'settings')}</Text>
         <View style={{ width: 34 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={styles.sectionTitle}>{t(language, 'general')}</Text>
         <Card>
           <Pressable onPress={() => router.push('/profile' as never)} style={styles.menuRow}>

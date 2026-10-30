@@ -33,7 +33,7 @@ export default function ArtifactsScreen() {
         <Text style={styles.headerTitle}>{t(language, 'artifacts')}</Text>
         <View style={{ width: 34 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         {items.length === 0 ? (
           <Text style={styles.sub}>{t(language, 'noArtifactsYet')}</Text>
         ) : items.map((a) => (

@@ -32,7 +32,7 @@ export default function MainAvatarScreen() {
         <Text style={styles.headerTitle}>{t(language, 'mainAvatar')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={styles.sub}>{t(language, 'pickAvatar')}</Text>
         <AvatarPicker value={avatar} onChange={async (id) => { setAvatar(id); await setSetting('main_chat_avatar', id); }} />
       </ScrollView>

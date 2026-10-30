@@ -57,7 +57,7 @@ export default function SkillsScreen() {
         <Text style={styles.headerTitle}>{t(language, 'skills')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         {detail ? (
           <>
             <Pressable onPress={() => setDetail(null)} style={styles.backRow}>

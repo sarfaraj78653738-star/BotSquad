@@ -68,7 +68,7 @@ export default function HistoryScreen() {
         <Text style={styles.headerTitle}>{t(language, 'history')}</Text>
         <View style={{ width: 34 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.tabs}>
           {([['main', 'mainChat'], ['bots', 'bots'], ['group', 'group']] as [Tab, string][]).map(([tabKey, labelKey]) => (
             <Pressable key={tabKey} onPress={() => setTab(tabKey)} style={[styles.tab, tab === tabKey && styles.tabActive]}>

@@ -101,7 +101,7 @@ export default function McpScreen() {
         <Text style={styles.headerTitle}>{detail ? detail.name : t(language, 'mcpServers')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         {detail ? (
           <>
             <Text style={styles.sub}>{detail.url}</Text>

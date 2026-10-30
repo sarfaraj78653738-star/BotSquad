@@ -30,7 +30,7 @@ export default function PluginsScreen() {
         <Text style={styles.headerTitle}>{t(language, 'plugins')}</Text>
         <View style={{ width: 84 }} />
       </View>
-    <ScrollView style={styles.body}>
+    <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
       <Text style={styles.sub}>{t(language, 'pluginsIntro')}</Text>
       {plugins.length === 0 && <Text style={styles.sub}>{t(language, 'noPlugins')}</Text>}
       {plugins.map((p) => (

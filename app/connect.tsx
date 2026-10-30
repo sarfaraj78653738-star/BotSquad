@@ -133,7 +133,7 @@ export default function ConnectScreen() {
         <Text style={styles.headerTitle}>{t(language, 'connections')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         {view.kind === 'list' && (
           <>
             <Text style={styles.sub}>{t(language, 'connectIntro')}</Text>

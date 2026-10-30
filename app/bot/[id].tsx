@@ -51,7 +51,7 @@ export default function BotEditScreen() {
         <Text style={styles.headerTitle}>{isNew ? t(language, 'createBotTitle') : `${t(language, 'editWord')} ${bot.name}`}</Text>
         <View style={{ width: 68 }} />
       </View>
-    <ScrollView style={styles.body}>
+    <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
       <Text style={styles.sub}>{t(language, 'oneTask')}</Text>
       <Text style={styles.title}>{t(language, 'avatarTitle')}</Text>
       <AvatarPicker value={bot.avatar} onChange={(id) => setBot({ ...bot, avatar: id })} />

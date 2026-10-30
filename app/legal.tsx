@@ -43,7 +43,7 @@ export default function LegalScreen() {
         <Text style={styles.headerTitle}>{t(language, 'legal')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         {doc ? (
           <>
             <Pressable onPress={() => setDoc(null)} style={styles.backRow}>

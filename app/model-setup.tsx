@@ -134,7 +134,7 @@ export default function ModelSetupScreen() {
         <Text style={styles.headerTitle}>{t(language, 'modelSetup')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={styles.sub}>{t(language, 'modelIntro')}</Text>
         <Card>
           <Text style={styles.bold}>{t(language, 'providerLabel')}</Text>

@@ -68,7 +68,7 @@ export default function ProfileScreen() {
         <Text style={styles.headerTitle}>{t(language, 'profile')}</Text>
         <View style={{ width: 84 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.avatarBlock}>
           <View style={styles.avatar}>
             {photoUri ? (

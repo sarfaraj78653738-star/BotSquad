@@ -58,7 +58,7 @@ export default function ProjectsScreen() {
           <Text style={styles.headerTitle}>{selected.name}</Text>
           <View style={{ width: 84 }} />
         </View>
-        <ScrollView style={styles.body}>
+        <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
           {selected.description ? <Text style={styles.bodyText}>{selected.description}</Text> : null}
           <Text style={styles.sub}>{t(language, 'linkedChats')}</Text>
           {linked.length === 0 ? (
@@ -88,7 +88,7 @@ export default function ProjectsScreen() {
         <Text style={styles.headerTitle}>{t(language, 'projects')}</Text>
         <View style={{ width: 34 }} />
       </View>
-      <ScrollView style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
         <Card>
           <Field label={t(language, 'projectName')} onChangeText={setName} value={name} />
           <Field label={t(language, 'descriptionOptional')} multiline onChangeText={setDescription} value={description} />
