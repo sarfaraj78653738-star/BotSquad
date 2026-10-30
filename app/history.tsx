@@ -51,16 +51,24 @@ export default function HistoryScreen() {
       const chats = await listChats();
       const rows: BotChatRow[] = [];
       for (const chat of chats) {
-        const msgs = await listMessages(chat.id).catch(() => []);
-        const last = msgs[msgs.length - 1];
+        // Same rule as Main Chat (listUniversalChats groups messages,
+        // so an empty thread never appears): a bot chat or group with
+        // no messages stays out of History until its first message
+        // (bug 2026-10-30: merely opening a bot, or creating a group,
+        // left a "No messages yet." row behind). A failed read keeps
+        // the row rather than hiding data on an error.
+        const msgs = await listMessages(chat.id).catch(() => null);
+        if (msgs !== null && msgs.length === 0) continue;
+        const last = msgs ? msgs[msgs.length - 1] : undefined;
         rows.push({ chat, bot: bots.find((b) => b.id === chat.botId) ?? null, snippet: last ? last.text : t(language, 'noMessagesYet') });
       }
       setBotRows(rows);
       const threads = await listGroupThreads();
       const grows: GroupRow[] = [];
       for (const thread of threads) {
-        const msgs = await listGroupMessages(thread.id).catch(() => []);
-        const last = msgs[msgs.length - 1];
+        const msgs = await listGroupMessages(thread.id).catch(() => null);
+        if (msgs !== null && msgs.length === 0) continue;
+        const last = msgs ? msgs[msgs.length - 1] : undefined;
         grows.push({ thread, snippet: last ? last.text : t(language, 'noMessagesYet') });
       }
       setGroupRows(grows);
