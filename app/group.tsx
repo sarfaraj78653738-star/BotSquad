@@ -228,20 +228,23 @@ export default function GroupScreen() {
           {error ? <Card><Text style={{ color: tokens.danger }}>{error}</Text></Card> : null}
           <Text style={styles.h}>{t(language, 'newGroup')}</Text>
           <TextInput accessibilityLabel="Group title" onChangeText={setNewTitle} placeholder={t(language, 'groupTitlePlaceholder')} placeholderTextColor={tokens.textMuted} style={styles.input} value={newTitle} />
-          {bots.map((b) => (
-            <Pressable key={b.id} onPress={() => setPicked((p) => (p.includes(b.id) ? p.filter((x) => x !== b.id) : [...p, b.id]))}>
-              <Card>
-                <View style={styles.row}>
-                  <BotAvatar variant={avatarFor(b.id, b.avatar)} size={36} />
+          {bots.length > 0 && (
+            <View style={styles.table}>
+              <View style={styles.tableRow}>
+                <View style={styles.tableCheckSpacer} />
+                <Text style={[styles.tableCell, styles.tableHead, { flex: 1 }]}>{t(language, 'botNameCol')}</Text>
+                <Text style={[styles.tableCell, styles.tableHead, { flex: 1 }]}>{t(language, 'botRoleCol')}</Text>
+              </View>
+              {bots.map((b) => (
+                <Pressable key={b.id} onPress={() => setPicked((p) => (p.includes(b.id) ? p.filter((x) => x !== b.id) : [...p, b.id]))} style={[styles.tableRow, styles.tableRowBorder]}>
                   <CheckBox selected={picked.includes(b.id)} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.name}>{b.name}</Text>
-                    {b.role ? <Text style={styles.roleText}>{b.role}</Text> : null}
-                  </View>
-                </View>
-              </Card>
-            </Pressable>
-          ))}
+                  <BotAvatar variant={avatarFor(b.id, b.avatar)} size={36} />
+                  <Text style={[styles.tableCell, { flex: 1 }]}>{b.name}</Text>
+                  <Text style={[styles.tableCell, styles.tableRole, { flex: 1 }]}>{b.role}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           {bots.length === 0 && <Card><Text style={styles.sub}>No bots yet. Create bots on the Bots screen first.</Text></Card>}
           <Button title={t(language, 'createGroup')} disabled={picked.length < 2} onPress={createThread} />
           <Text style={styles.h}>{t(language, 'pastGroups')}</Text>
@@ -389,6 +392,15 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   input: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, color: tokens.text, fontSize: tokens.font.md, marginBottom: 12, padding: 14 },
   name: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
   roleText: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 2 },
+  table: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, marginBottom: 12, overflow: 'hidden' },
+  tableRow: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingHorizontal: 12, paddingVertical: 12 },
+  tableRowBorder: { borderTopColor: tokens.border, borderTopWidth: 1 },
+  // Header spacer = checkbox 22 + gap 10 + avatar 36, so the header's
+  // Bot name column starts exactly where the rows' names start.
+  tableCheckSpacer: { width: 68 },
+  tableCell: { color: tokens.text, fontSize: tokens.font.md },
+  tableHead: { color: tokens.textMuted, fontWeight: '800' },
+  tableRole: { color: tokens.textMuted },
   newChatButton: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
   newChatText: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700' },
   row: { alignItems: 'center', flexDirection: 'row', gap: 10 },
