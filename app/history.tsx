@@ -169,7 +169,7 @@ export default function HistoryScreen() {
             {[...botRows].sort((a, b) => Number(pinnedIds.includes(b.chat.id)) - Number(pinnedIds.includes(a.chat.id))).map((r) => (
               <Card key={r.chat.id}>
                 <View style={styles.row}>
-                  <Pressable style={{ flex: 1 }} onPress={() => router.push(`/chat/${r.chat.botId}` as never)}>
+                  <Pressable style={{ flex: 1 }} onPress={() => router.push({ pathname: `/chat/${r.chat.botId}`, params: { chatId: r.chat.id } } as never)}>
                     <View style={styles.row}>
                       <BotAvatar variant={avatarFor(r.bot?.id, r.bot?.avatar)} size={40} />
                       <View style={{ flex: 1 }}>

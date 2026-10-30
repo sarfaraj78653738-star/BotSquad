@@ -7,7 +7,7 @@ import { ComposerBar } from './ComposerBar';
 import { AlertDialog, type AlertDialogButton } from './AlertDialog';
 import LiveBrowserPanel, { LiveBrowserHandle } from './LiveBrowserPanel';
 import { parseBrowserCommands, parseBrowserRequest } from '../lib/liveBrowser';
-import { addMemory, addMessage, deleteChat, deleteUniversalThread, getBot, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBots, listConnections, listMcpServers, listMemory, listMessages, listPlugins, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
+import { addMemory, addMessage, createChat, deleteChat, deleteUniversalThread, getBot, getChat, getOrCreateChat, getPinnedThreads, getSetting, getUniversalTitle, listBots, listConnections, listMcpServers, listMemory, listMessages, listPlugins, listSkills, renameChat, saveBot, saveSkill, setUniversalTitle, togglePinThread } from '../lib/db';
 import { getUniversal, getUniversalChatId, setUniversalChatId } from '../lib/universal';
 import { detectAutoSkill } from '../lib/autoSkill';
 import { buildSystemPrompt, extractMemoryNote } from '../lib/prompt';
@@ -59,7 +59,13 @@ function makeUniversalBot(): Bot {
   };
 }
 
-export function ChatView({ botId, universal, universalChatId, topBar }: { botId?: string; universal?: boolean; universalChatId?: string; topBar: (bot: Bot | null, actions?: React.ReactNode) => React.ReactNode }) {
+// fresh: open a brand-new thread for this bot instead of its latest
+// (drawer New chat → Bots list → bot, user order 2026-10-30).
+// threadId: open one specific bot thread (a History row). Both are
+// one-shot: the mount effect deliberately does NOT list them in its
+// deps, so stripping the URL param after mount can never re-run it
+// and spawn a second thread.
+export function ChatView({ botId, universal, universalChatId, fresh, threadId, topBar }: { botId?: string; universal?: boolean; universalChatId?: string; fresh?: boolean; threadId?: string; topBar: (bot: Bot | null, actions?: React.ReactNode) => React.ReactNode }) {
   const tokens = useTokens();
   const [language] = useLanguage();
   const styles = getStyles(tokens);
@@ -181,7 +187,10 @@ export function ChatView({ botId, universal, universalChatId, topBar }: { botId?
       const b = await getBot(botId);
       setBot(b);
       if (b) {
-        const chat = await getOrCreateChat(b.id);
+        // A specific History thread wins; else a fresh thread when
+        // armed; else the bot's latest thread (previous behaviour).
+        // A missing threadId (deleted meanwhile) falls back safely.
+        const chat = (threadId ? await getChat(threadId) : null) ?? (fresh ? await createChat(b.id) : await getOrCreateChat(b.id));
         setChatId(chat.id);
         setMessages(await listMessages(chat.id));
       }

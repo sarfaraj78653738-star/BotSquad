@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MenuButton } from '../../src/components/Drawer';
 import { ChatView } from '../../src/components/ChatView';
@@ -18,12 +19,19 @@ export default function BotChatScreen() {
   const tokens = useTokens();
   const [language] = useLanguage();
   const styles = getStyles(tokens);
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fresh, chatId } = useLocalSearchParams<{ id: string; fresh?: string; chatId?: string }>();
   const router = useRouter();
+  // Fresh is one-shot (user order 2026-10-30): strip it from the URL
+  // so a later remount can never spawn a second new thread. This
+  // parent effect runs after ChatView's mount effect, and that effect
+  // does not depend on fresh, so stripping cannot restart it.
+  useEffect(() => { if (fresh === '1') router.replace(`/chat/${id}` as never); }, []);
   if (!id) return <View style={styles.wrap}><Text style={styles.sub}>{t(language, 'loadingChat')}</Text></View>;
   return (
     <ChatView
       botId={id}
+      fresh={fresh === '1'}
+      threadId={typeof chatId === 'string' ? chatId : undefined}
       topBar={(bot, actions) => (
         <View style={styles.header}>
           <MenuButton />

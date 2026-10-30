@@ -107,6 +107,26 @@ export async function getOrCreateChat(botId: string): Promise<Chat> {
   return chat;
 }
 
+// A brand-new thread for a bot (user order 2026-10-30: drawer New
+// chat → Bots list → any bot opens a completely new chat). Always
+// inserts, never reuses the latest thread. Old threads stay in
+// History, openable by id below — nothing is deleted by going new.
+export async function createChat(botId: string): Promise<Chat> {
+  const d = await getDb();
+  const chat: Chat = { id: newId(), botId, title: 'New chat', status: 'active', createdAt: nowIso(), updatedAt: nowIso() };
+  await d.runAsync('INSERT INTO chats (id, bot_id, title, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', [chat.id, chat.botId, chat.title, chat.status, chat.createdAt, chat.updatedAt]);
+  return chat;
+}
+
+// One specific bot thread, for History rows: without this, every
+// History row for a bot would open its latest thread and old threads
+// would be listed but unreachable.
+export async function getChat(id: string): Promise<Chat | null> {
+  const d = await getDb();
+  const row = await d.getFirstAsync("SELECT * FROM chats WHERE id = ? AND status = 'active'", [id]) as any;
+  return row ? { id: row.id, botId: row.bot_id, title: row.title, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at } : null;
+}
+
 export async function listMessages(chatId: string): Promise<Message[]> {
   const d = await getDb();
   const rows = await d.getAllAsync('SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at ASC', [chatId]);

@@ -118,12 +118,13 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
             onClose();
             // New chat follows the section the user is already in
             // (user order 2026-10-30): from a bot chat or the Bots
-            // list it opens Bots (pick a bot to start with), from a
-            // group it opens the new-group form, everywhere else a
-            // fresh Main Chat thread. It used to always open Main
-            // Chat, even from Bots or Group.
+            // list it opens Bots in new-chat mode (fresh=1: every bot
+            // opened from there starts a brand-new thread, old ones
+            // stay in History), from a group it opens the new-group
+            // form, everywhere else a fresh Main Chat thread. It used
+            // to always open Main Chat, even from Bots or Group.
             if (pathname === '/group') router.replace('/group' as never);
-            else if (pathname === '/bots' || pathname.startsWith('/chat/')) router.replace('/bots' as never);
+            else if (pathname === '/bots' || pathname.startsWith('/chat/')) router.replace({ pathname: '/bots', params: { fresh: '1' } } as never);
             else router.replace({ pathname: '/', params: { chatId: `universal-${newId()}` } } as never);
           }}
           style={styles.newChatButton}
