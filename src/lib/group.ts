@@ -6,7 +6,7 @@ import { parseSkillCallout } from './skillCallout';
 import { mcpPromptBlock, parseMcpCallout } from './mcpCallout';
 import { parseConnectionCallout } from './connectionCallout';
 import { listMcpTools } from './mcp';
-import { executeAgentTool, parseToolCalls, stripToolBlocks } from './agent';
+import { BOT_FILE_TOOLS_PROMPT, FILE_TOOL_NAMES, executeAgentTool, parseToolCalls, stripToolBlocks } from './agent';
 import { Bot, GroupMessage, newId, nowIso } from './types';
 
 // Group chat runner: each selected bot replies IN TURN, in the order the
@@ -78,7 +78,20 @@ export async function runGroupMessage(
   const connCallout = parseConnectionCallout(mcpEffectiveText, allConns);
   const connEffectiveText = connCallout.connection ? connCallout.cleanText : mcpEffectiveText;
 
-  for (const bot of members) {
+  // Role-based auto-adopt (user order 2026-10-30): every bot replying to
+  // every message was noise. Only bots whose role/task words appear in
+  // the message take the turn; if none match (a greeting, a group
+  // question), all reply so the group never goes silent.
+  const roleScore = (b: Bot, text: string) => {
+    const lower = text.toLowerCase();
+    const words = new Set(`${b.role} ${b.task}`.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
+    let score = 0;
+    for (const w of words) if (lower.includes(w)) score++;
+    return score;
+  };
+  const scoredMembers = members.map((m) => ({ bot: m, score: roleScore(m, connEffectiveText) }));
+  const activeMembers = scoredMembers.some((s) => s.score > 0) ? scoredMembers.filter((s) => s.score > 0).map((s) => s.bot) : members;
+  for (const bot of activeMembers) {
     onBotWorking?.(bot.name);
     try {
       const memory = await listMemory(bot.id);
@@ -95,23 +108,29 @@ export async function runGroupMessage(
       // only for a service enabled for this bot or called out this
       // turn. Without an approval callback (should not happen from
       // group.tsx), gated calls are refused rather than run blind.
-      let botToolsPrompt = '';
+      let botToolsPrompt = BOT_FILE_TOOLS_PROMPT;
       if (effectiveConns.length) {
-        botToolsPrompt = `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
+        botToolsPrompt += `\n\n[TOOLS — you can also call this bot's connected services this turn with a fenced block:\n\`\`\`tool\n{"name": "service_request", "args": {"service": "<service>", "method": "GET", "path": "/..."}} \n\`\`\`\nOnly the services listed as connected for this bot. GET runs straight away; POST/PUT/PATCH/DELETE wait for the user's approval. After each result, either emit the next tool block or give your final reply with no tool block.]`;
       }
       const approve = requestApproval ?? (async () => false);
       let reply = await chatWithBot(bot, system + botToolsPrompt, history, connEffectiveText);
-      if (mcpCallout.server || effectiveConns.length) {
+      {
         const loopHistory: { role: string; text: string }[] = [];
         const actionsTaken: string[] = [];
         for (let step = 0; step < 8; step++) {
-          const calls = parseToolCalls(reply).filter((c) => c.name === 'mcp_call' || c.name === 'service_request');
+          const calls = parseToolCalls(reply).filter((c) => FILE_TOOL_NAMES.includes(c.name) || c.name === 'mcp_call' || c.name === 'service_request');
           if (calls.length === 0) break;
           const results: string[] = [];
           for (const call of calls) {
             const argStr = (k: string) => typeof call.args[k] === 'string' ? call.args[k] as string : '';
             let result: string;
-            if (call.name === 'mcp_call') {
+            if (FILE_TOOL_NAMES.includes(call.name)) {
+              // Workspace file tools: same approval-gated path as Main
+              // Chat (writes/edits/deletes pause at the approval card,
+              // which group.tsx labels with the replying bot's name).
+              result = await executeAgentTool(call, approve);
+              actionsTaken.push(`${call.name} ${argStr('path') || argStr('query') || argStr('url')}`);
+            } else if (call.name === 'mcp_call') {
               const srv = argStr('server');
               if (!mcpCallout.server || srv.toLowerCase() !== mcpCallout.server.name.toLowerCase()) {
                 result = `Error: mcp_call is only allowed for the server called out this turn${mcpCallout.server ? ` ("${mcpCallout.server.name}")` : ' (none called out)'}.`;
@@ -134,7 +153,7 @@ export async function runGroupMessage(
           loopHistory.push({ role: 'assistant', text: reply });
           loopHistory.push({ role: 'user', text: results.join('\n\n') });
           if (step === 7) break;
-          reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another MCP or service call, emit one tool block; otherwise give your final reply with no tool block.');
+          reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.');
         }
         reply = stripToolBlocks(reply);
         if (!reply) reply = actionsTaken.length ? `Done. Used: ${actionsTaken.join('; ')}.` : 'Done.';

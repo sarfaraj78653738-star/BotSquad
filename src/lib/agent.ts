@@ -40,6 +40,27 @@ Available tools:
 Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export, any live URL). You cannot run commands, servers, tests, or git on this phone — say so plainly if asked, and offer the workspace export instead. For a connected service you do not know the API for, try its standard REST path; if the service returns an error, report it plainly instead of guessing another call.
 `;
 
+// Workspace file tools for bot and group chats (user order 2026-10-30):
+// the same file tools Main Chat has, minus deploy — vercel_deploy stays
+// Main Chat only (publishing is public). Writes/edits/deletes still pause
+// at the chat's approval card, and the loop filter is what keeps any other
+// tool out of these chats.
+export const FILE_TOOL_NAMES = ['list_files', 'read_file', 'search_files', 'write_file', 'edit_file', 'delete_file', 'browser_read'];
+
+export const BOT_FILE_TOOLS_PROMPT = `
+[WORKSPACE FILE TOOLS — you can also work with files in the phone's workspace, exactly like Main Chat, with the same approval rule. Emit each tool call as its own fenced block:
+\`\`\`tool
+{"name": "write_file", "args": {"path": "index.html", "content": "..."}}
+\`\`\`
+- list_files {path?}: list workspace files (blank for all).
+- read_file {path}: read one workspace file (text only).
+- search_files {query}: search workspace files for text.
+- write_file {path, content}: create or overwrite a workspace file. Runs ONLY after the user approves that exact change.
+- edit_file {path, old_text, new_text}: replace text in a workspace file. Runs ONLY after the user approves that exact change.
+- delete_file {path}: delete a workspace file. Runs ONLY after the user approves it.
+- browser_read {url}: read a PUBLIC web page as text (no logins, paywalls, or CAPTCHAs).
+Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, tests, or git on this phone, and you cannot publish or deploy a site — publishing stays in Main Chat; say so plainly if asked.]`;
+
 export function parseToolCalls(reply: string): AgentToolCall[] {
   const calls: AgentToolCall[] = [];
   const re = /```tool\s*\n([\s\S]*?)```/g;
