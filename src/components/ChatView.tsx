@@ -129,7 +129,6 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
   // back near the bottom turns it on again.
   const listRef = useRef<FlatList<Message> | null>(null);
   const stickToBottom = useRef(true);
-  const scrolledOnce = useRef(false);
   const scrollPending = useRef(false);
   const scrollToBottom = (animated: boolean) => listRef.current?.scrollToEnd({ animated });
 
@@ -147,17 +146,20 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
   const prevMsgCount = useRef(0);
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
-      // Round 3 (bug 2026-10-30): scrolling at once was not enough —
-      // it ran before the new rows were laid out, landed short, and
-      // the short landing flipped stickToBottom off, so the layout
-      // correction never ran and the reply's last lines stayed hidden
-      // below the composer. So the growth also arms a pending scroll
-      // (the next content-size change scrolls regardless of stick)
-      // and a deferred scroll after layout settles.
+      // Round 4 (bug 2026-10-30, video): round 3 still left a
+      // reply's tail clipped under the composer. Two holes: the
+      // pending scroll was consumed by the FIRST content-size
+      // change, but the row's final height (and the Save-as-artifact
+      // row under it) can land after that; and the animated first
+      // scroll could race the deferred jump and land short. So
+      // programmatic sticks are now non-animated, pending is NOT
+      // cleared by a content change — only by an onScroll that
+      // actually reports the bottom reached — and it expires 1s
+      // after growth so a later scroll-up is never yanked.
       scrollPending.current = true;
-      scrollToBottom(scrolledOnce.current);
+      scrollToBottom(false);
       setTimeout(() => scrollToBottom(false), 150);
-      scrolledOnce.current = true;
+      setTimeout(() => { scrollPending.current = false; }, 1000);
     }
     prevMsgCount.current = messages.length;
   }, [messages.length]);
@@ -555,12 +557,12 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
         scrollEventThrottle={16}
         onScroll={(e) => {
           const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          stickToBottom.current = contentSize.height - (layoutMeasurement.height + contentOffset.y) < 120;
+          const distance = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+          stickToBottom.current = distance < 120;
+          if (distance < 24) scrollPending.current = false;
         }}
         onContentSizeChange={() => {
-          if (stickToBottom.current || scrollPending.current) scrollToBottom(scrolledOnce.current);
-          scrollPending.current = false;
-          scrolledOnce.current = true;
+          if (stickToBottom.current || scrollPending.current) scrollToBottom(false);
         }}
         renderItem={({ item }) => {
           if (item.role === 'user') {

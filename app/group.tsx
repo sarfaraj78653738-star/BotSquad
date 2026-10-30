@@ -32,11 +32,13 @@ export default function GroupScreen() {
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
   const [bots, setBots] = useState<Bot[]>([]);
   const [threads, setThreads] = useState<GroupThread[]>([]);
+  const [threadMembers, setThreadMembers] = useState<Record<string, string[]>>({});
   const [selected, setSelected] = useState<GroupThread | null>(null);
   const [members, setMembers] = useState<Bot[]>([]);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [newTitle, setNewTitle] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [workingBot, setWorkingBot] = useState<string | null>(null);
@@ -89,7 +91,6 @@ export default function GroupScreen() {
   // unless the user scrolled up to read old messages.
   const listRef = useRef<FlatList<GroupMessage> | null>(null);
   const stickToBottom = useRef(true);
-  const scrolledOnce = useRef(false);
   const scrollPending = useRef(false);
 
   useEffect(() => {
@@ -103,22 +104,43 @@ export default function GroupScreen() {
   const prevMsgCount = useRef(0);
   useEffect(() => {
     if (messages.length > prevMsgCount.current) {
-      // Round 3 (bug 2026-10-30), same as ChatView: an immediate
-      // scroll runs before new rows are laid out, lands short, and
-      // the short landing flips stick off, so the layout correction
-      // never ran and the last reply's lines stayed below the
-      // composer. Arm a pending scroll plus a deferred one.
+      // Round 4 (bug 2026-10-30, video), same as ChatView: round 3
+      // still left a reply's tail clipped under the composer —
+      // pending was consumed by the first content-size change while
+      // the row's final height landed later, and the animated first
+      // scroll could race the deferred jump. Non-animated sticks,
+      // pending clears only on an onScroll that reports the bottom
+      // reached, 1s expiry so a later scroll-up is never yanked.
       scrollPending.current = true;
-      listRef.current?.scrollToEnd({ animated: scrolledOnce.current });
+      listRef.current?.scrollToEnd({ animated: false });
       setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 150);
-      scrolledOnce.current = true;
+      setTimeout(() => { scrollPending.current = false; }, 1000);
     }
     prevMsgCount.current = messages.length;
   }, [messages.length]);
 
   const refresh = useCallback(() => {
     listBots().then(setBots).catch(() => {});
-    listGroupThreads().then(setThreads).catch(() => {});
+    // Past groups shows ONLY threads that actually have messages
+    // (bug 2026-10-30, video): Create makes the row at once, so an
+    // untouched thread used to sit in the list and open a blank
+    // chat. Same rule as History since c2d2df6: a thread appears
+    // once its first message lands; a failed read keeps the row.
+    // Member names ride along so identical "Group chat" titles can
+    // still be told apart.
+    (async () => {
+      try {
+        const ts = await listGroupThreads();
+        const withData = await Promise.all(ts.map(async (t) => {
+          try {
+            const [msgs, mems] = await Promise.all([listGroupMessages(t.id), listGroupMembers(t.id)]);
+            return { thread: t, count: msgs.length, members: mems.map((b) => b.name) };
+          } catch { return { thread: t, count: null, members: [] as string[] }; }
+        }));
+        setThreads(withData.filter((d) => d.count === null || d.count > 0).map((d) => d.thread));
+        setThreadMembers(Object.fromEntries(withData.map((d) => [d.thread.id, d.members])));
+      } catch { /* list stays as it was */ }
+    })().catch(() => {});
   }, []);
   useFocusEffect(refresh);
 
@@ -141,13 +163,19 @@ export default function GroupScreen() {
   }, [threadId, threads]);
 
   async function createThread() {
+    if (creating) return;
     if (picked.length < 2) { setError(t(language, 'pickAtLeast2')); return; }
     setError('');
-    const thread = await createGroupThread(newTitle, picked);
-    setNewTitle('');
-    setPicked([]);
-    await refresh();
-    await openThread(thread);
+    setCreating(true);
+    try {
+      const thread = await createGroupThread(newTitle, picked);
+      setNewTitle('');
+      setPicked([]);
+      await refresh();
+      await openThread(thread);
+    } finally {
+      setCreating(false);
+    }
   }
 
   async function send(textOverride?: string, reuseUser = false) {
@@ -307,7 +335,7 @@ export default function GroupScreen() {
             </View>
           )}
           {bots.length === 0 && <Card><Text style={styles.sub}>No bots yet. Create bots on the Bots screen first.</Text></Card>}
-          <Button title={t(language, 'createGroup')} disabled={picked.length < 2} onPress={createThread} />
+          <Button title={t(language, 'createGroup')} disabled={picked.length < 2 || creating} onPress={createThread} />
           <Text style={styles.h}>{t(language, 'pastGroups')}</Text>
           <FlatList
             data={threads}
@@ -317,6 +345,7 @@ export default function GroupScreen() {
                 <View style={styles.threadRow}>
                   <Pressable style={styles.threadTitle} onPress={() => openThread(item)}>
                     <Text style={styles.name}>{item.title}</Text>
+                    {threadMembers[item.id]?.length ? <Text style={styles.roleText}>{threadMembers[item.id].join(', ')}</Text> : null}
                   </Pressable>
                   <Pressable accessibilityLabel={`Delete group ${item.title}`} onPress={() => setDialog({ title: 'Delete this group?', message: 'Its messages are deleted too. This cannot be undone.', buttons: [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await deleteGroupThread(item.id); refresh(); } }] })}>
                     <Text style={styles.deleteText}>Delete</Text>
@@ -336,15 +365,21 @@ export default function GroupScreen() {
             data={messages}
             keyExtractor={(m) => m.id}
             style={{ flex: 1 }}
+            // Bottom buffer (bug 2026-10-30, video): ChatView's list
+            // has padding on all sides, but this list had NO content
+            // padding, so scrollToEnd parked the last row flush on
+            // the composer's top edge and any hair short clipped its
+            // last line. This buffer is the margin that was missing.
+            contentContainerStyle={{ paddingBottom: tokens.space.md }}
             scrollEventThrottle={16}
             onScroll={(e) => {
               const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-              stickToBottom.current = contentSize.height - (layoutMeasurement.height + contentOffset.y) < 120;
+              const distance = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+              stickToBottom.current = distance < 120;
+              if (distance < 24) scrollPending.current = false;
             }}
             onContentSizeChange={() => {
-              if (stickToBottom.current || scrollPending.current) listRef.current?.scrollToEnd({ animated: scrolledOnce.current });
-              scrollPending.current = false;
-              scrolledOnce.current = true;
+              if (stickToBottom.current || scrollPending.current) listRef.current?.scrollToEnd({ animated: false });
             }}
             renderItem={({ item }) => {
               if (item.role === 'user') {

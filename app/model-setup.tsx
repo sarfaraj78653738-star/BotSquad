@@ -194,6 +194,9 @@ export default function ModelSetupScreen() {
             </View>
           </View>
           <Button title={t(language, 'saveBtn')} onPress={save} />
+          {/* Air below Save so the button never sits flush on the
+              card's bottom edge (bug 2026-10-30). */}
+          <View style={{ height: 12 }} />
         </Card>
         {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
         <Text style={styles.sectionTitle}>{t(language, 'savedModels')}</Text>
@@ -246,7 +249,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   menuDetail: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 2 },
   menuLabel: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
   menuRowDivider: { borderTopColor: tokens.border, borderTopWidth: 1 },
-  modelRow: { flexDirection: 'row', gap: 8 },
+  modelRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   msgText: { color: tokens.text, fontSize: tokens.font.md },
   savedHead: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   savedRow: { alignItems: 'center', flexDirection: 'row', gap: 8, paddingVertical: 12 },
