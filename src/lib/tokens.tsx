@@ -82,11 +82,13 @@ export const tokens = lightTokens;
 
 export type ColorMode = 'system' | 'light' | 'dark';
 export type FontStyle = 'default' | 'system';
-// App language (user order 2026-10-29): chosen in Settings → General →
-// Language. Stored like color/font prefs; the drawer and Settings
-// read it via useLanguage + t() in lib/i18n. RTL languages (Urdu,
-// Arabic) are deliberately NOT in this list yet — they need a layout
-// direction pass before their labels will sit right.
+// App language — REMOVED 2026-10-30 (user order, option 2): the
+// Settings → General → Language section is gone and the app is
+// English-only. LANGUAGE_CODES / Language / LANGUAGE_KEY stay exported
+// only because lib/i18n's types still reference them; useLanguage
+// below always returns 'en', so no stored value can change the UI
+// anymore. The translation dictionaries in lib/i18n are now dead code
+// except their 'en' blocks — full deletion is a separate cleanup job.
 export const LANGUAGE_CODES = ['en', 'hi', 'bn', 'ta', 'te', 'mr', 'es', 'fr', 'de', 'pt'] as const;
 export type Language = (typeof LANGUAGE_CODES)[number];
 
@@ -100,9 +102,6 @@ const ColorModeContext = createContext<ColorMode>('system');
 const SetColorModeContext = createContext<(m: ColorMode) => void>(() => {});
 const FontStyleContext = createContext<FontStyle>('default');
 const SetFontStyleContext = createContext<(f: FontStyle) => void>(() => {});
-const LanguageContext = createContext<Language>('en');
-const SetLanguageContext = createContext<(l: Language) => void>(() => {});
-
 // Font style mapping (the only real distinction this app can offer
 // without a custom font family): Default uses the app's designed sizes
 // (no system scaling, so layouts never break), System follows the
@@ -118,15 +117,12 @@ function applyFontStyle(f: FontStyle) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [colorMode, setColorModeState] = useState<ColorMode>('system');
   const [fontStyle, setFontStyleState] = useState<FontStyle>('default');
-  const [language, setLanguageState] = useState<Language>('en');
   useEffect(() => {
     (async () => {
       const cm = await getSetting(COLOR_MODE_KEY);
       if (cm === 'light' || cm === 'dark' || cm === 'system') setColorModeState(cm);
       const fs = await getSetting(FONT_STYLE_KEY);
       if (fs === 'system' || fs === 'default') setFontStyleState(fs);
-      const lang = await getSetting(LANGUAGE_KEY);
-      if ((LANGUAGE_CODES as readonly string[]).includes(lang ?? '')) setLanguageState(lang as Language);
     })().catch(() => {});
   }, []);
   useEffect(() => { applyFontStyle(fontStyle); }, [fontStyle]);
@@ -138,19 +134,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setFontStyleState(f);
     setSetting(FONT_STYLE_KEY, f).catch(() => {});
   }, []);
-  const setLanguage = useCallback((l: Language) => {
-    setLanguageState(l);
-    setSetting(LANGUAGE_KEY, l).catch(() => {});
-  }, []);
   return (
     <ColorModeContext.Provider value={colorMode}>
       <SetColorModeContext.Provider value={setColorMode}>
         <FontStyleContext.Provider value={fontStyle}>
-          <SetFontStyleContext.Provider value={setFontStyle}>
-            <LanguageContext.Provider value={language}>
-              <SetLanguageContext.Provider value={setLanguage}>{children}</SetLanguageContext.Provider>
-            </LanguageContext.Provider>
-          </SetFontStyleContext.Provider>
+          <SetFontStyleContext.Provider value={setFontStyle}>{children}</SetFontStyleContext.Provider>
         </FontStyleContext.Provider>
       </SetColorModeContext.Provider>
     </ColorModeContext.Provider>
@@ -166,7 +154,9 @@ export function useFontStyle(): [FontStyle, (f: FontStyle) => void] {
 }
 
 export function useLanguage(): [Language, (l: Language) => void] {
-  return [useContext(LanguageContext), useContext(SetLanguageContext)];
+  // Language section removed 2026-10-30: always English. The setter is
+  // a no-op kept only so existing call sites keep compiling.
+  return ['en', () => {}];
 }
 
 export function useTokens(): ThemeTokens {

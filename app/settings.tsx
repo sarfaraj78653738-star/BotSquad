@@ -7,8 +7,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
-import { ColorMode, FontStyle, Language, useColorMode, useFontStyle, useLanguage, useTokens } from '../src/lib/tokens';
-import { LANGUAGE_OPTIONS, t } from '../src/lib/i18n';
+import { ColorMode, FontStyle, useColorMode, useFontStyle, useLanguage, useTokens } from '../src/lib/tokens';
+import { t } from '../src/lib/i18n';
 
 // Settings is the hub, laid out as clean grouped rows (icon, title,
 // short subtitle). Group 1 is the person + device: Profile, Color mode,
@@ -84,8 +84,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const [colorMode, setColorMode] = useColorMode();
   const [fontStyle, setFontStyle] = useFontStyle();
-  const [language, setLanguage] = useLanguage();
-  const [picker, setPicker] = useState<'color' | 'font' | 'language' | null>(null);
+  const [language] = useLanguage();
+  const [picker, setPicker] = useState<'color' | 'font' | null>(null);
   const [permText, setPermText] = useState('Open system settings to review');
 
 
@@ -175,10 +175,8 @@ export default function SettingsScreen() {
 
   const colorOptions = COLOR_OPTIONS.map((o) => ({ id: o.id, label: t(language, o.labelKey), detail: t(language, o.detailKey) }));
   const fontOptions = FONT_OPTIONS.map((o) => ({ id: o.id, label: t(language, o.labelKey), detail: t(language, o.detailKey) }));
-  const languageOptions = LANGUAGE_OPTIONS.map((o) => ({ id: o.id, label: o.label, detail: '' }));
   const colorLabel = colorOptions.find((o) => o.id === colorMode)?.label ?? 'System';
   const fontLabel = fontOptions.find((o) => o.id === fontStyle)?.label ?? 'Default';
-  const languageLabel = LANGUAGE_OPTIONS.find((o) => o.id === language)?.label ?? 'English';
 
   return (
     <View style={styles.wrap}>
@@ -230,14 +228,6 @@ export default function SettingsScreen() {
             </View>
             <Feather name="chevron-right" size={20} color={tokens.textMuted} />
           </Pressable>
-          <Pressable onPress={() => setPicker('language')} style={[styles.menuRow, styles.menuRowDivider]}>
-            <Feather name="globe" size={20} color={tokens.textMuted} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>{t(language, 'language')}</Text>
-              <Text style={styles.menuDetail}>{languageLabel}</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
-          </Pressable>
         </Card>
         <Text style={styles.sectionTitle}>{t(language, 'tools')}</Text>
         <Card>
@@ -267,14 +257,6 @@ export default function SettingsScreen() {
         options={fontOptions}
         selected={fontStyle}
         onSelect={(id) => setFontStyle(id as FontStyle)}
-        onClose={() => setPicker(null)}
-      />
-      <OptionSheet
-        open={picker === 'language'}
-        title={t(language, 'language')}
-        options={languageOptions}
-        selected={language}
-        onSelect={(id) => setLanguage(id as Language)}
         onClose={() => setPicker(null)}
       />
     </View>
