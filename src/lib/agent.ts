@@ -1,6 +1,9 @@
 import { fetchPublicPageText } from './providers';
 import { deleteWorkspaceFile, listWorkspaceFiles, readWorkspaceFile, safeWorkspacePath, workspaceDir, writeWorkspaceFile } from './workspace';
 import { cloneGitHubRepo, parseGitHubRepo } from './gitDownload';
+import { runPluginCode } from './pluginRunner';
+import { listPlugins, listSkills, savePlugin, saveSkill } from './db';
+import { newId, nowIso } from './types';
 import { serviceRequest, vercelDeploy } from './serviceTools';
 import { listMcpServers } from './db';
 import { getMcpToken } from './connections';
@@ -21,6 +24,10 @@ import { requireHttpsUrl } from './mcp';
 // One exception (user order 2026-10-31): the agent CAN download a
 // public GitHub repo into the workspace with download_repo, via
 // isomorphic-git (pure JavaScript git — no terminal, no server).
+// Second exception (same order): the agent CAN run a plugin's
+// JavaScript on the phone with run_plugin, inside the hidden WebView
+// sandbox (src/lib/pluginRunner.ts) — no host, no server. Plugin
+// code never runs in the app's own runtime.
 // File writes, edits, and deletes NEVER run without the user's
 // approval on that exact change (the approval card in chat).
 export type AgentToolCall = { name: string; args: Record<string, unknown> };
@@ -42,7 +49,8 @@ Available tools:
 - vercel_deploy {files, project?}: publish workspace files as a live production site on Vercel (the "make my website live" tool). files is a list of workspace paths, like ["index.html", "style.css"]. Runs ONLY after the user approves the deploy, and only when Vercel is connected. Returns the live URL.
 - mcp_call {server, tool, args}: run one tool of the MCP server called out this turn (see the [MCP SERVER] block in your prompt — never call a server that is not called out). args is a JSON object. Runs ONLY after the user approves that exact call in chat.
 - download_repo {repo}: download a PUBLIC GitHub repo into workspace/repos/<owner>-<repo>/ ("owner/name" or a github.com URL; latest files only, single branch). Runs ONLY after the user approves that exact download in chat. Use it when the user asks to download or fetch a GitHub repo.
-Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export, any live URL). You cannot run commands, servers, or tests on this phone — say so plainly if asked. But you CAN download a public GitHub repo with download_repo; offer that when asked to fetch a repo. For a connected service you do not know the API for, try its standard REST path; if the service returns an error, report it plainly instead of guessing another call.
+- run_plugin {plugin}: run a plugin's JavaScript on this phone in the WebView sandbox — no host, no server. Give a plugin name, a github.com repo ("owner/name" or URL), or a workspace .js file. A repo is downloaded first if needed, then its entry file is found automatically (package.json main, index.js, main.js, plugin.js); a repo with only SKILL.md is installed as a skill instead of running. Runs ONLY after the user approves that exact run in chat. The plugin can read workspace files, write them (each write needs approval), and read public pages, and must call pluginDone(result) when finished.
+Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export, any live URL). You cannot run commands, servers, or tests on this phone — say so plainly if asked. But you CAN download a public GitHub repo with download_repo and run a plugin's JavaScript with run_plugin; offer those when asked to fetch or run a repo. For a connected service you do not know the API for, try its standard REST path; if the service returns an error, report it plainly instead of guessing another call.
 `;
 
 // Workspace file tools for bot and group chats (user order 2026-10-30):
@@ -51,7 +59,7 @@ Rules: never invent file contents you have not read; paths stay inside the works
 // "whatever Main Chat can do, bot and group can do"). Writes/edits/
 // deletes/deploys still pause at the chat's approval card, and the loop
 // filter is what keeps any other tool out of these chats.
-export const FILE_TOOL_NAMES = ['list_files', 'read_file', 'search_files', 'write_file', 'edit_file', 'delete_file', 'browser_read', 'download_repo'];
+export const FILE_TOOL_NAMES = ['list_files', 'read_file', 'search_files', 'write_file', 'edit_file', 'delete_file', 'browser_read', 'download_repo', 'run_plugin'];
 
 export const BOT_FILE_TOOLS_PROMPT = `
 [WORKSPACE FILE TOOLS — you can also work with files in the phone's workspace, exactly like Main Chat, with the same approval rule. Emit each tool call as its own fenced block:
@@ -67,7 +75,8 @@ export const BOT_FILE_TOOLS_PROMPT = `
 - browser_read {url}: read a PUBLIC web page as text (no logins, paywalls, or CAPTCHAs).
 - vercel_deploy {files, project?}: publish workspace files as a live production site on Vercel. Runs ONLY after the user approves the deploy, and only when Vercel is connected. Returns the live URL.
 - download_repo {repo}: download a PUBLIC GitHub repo into workspace/repos/<owner>-<repo>/ ("owner/name" or a github.com URL; latest files only, single branch). Runs ONLY after the user approves that exact download in chat.
-Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, or tests on this phone, but you CAN download a public GitHub repo with download_repo; say so plainly if asked.]`;
+- run_plugin {plugin}: run a plugin's JavaScript on this phone in the WebView sandbox — no host, no server. Give a plugin name, a github.com repo ("owner/name" or URL), or a workspace .js file. A repo is downloaded first if needed, then its entry file is found automatically (package.json main, index.js, main.js, plugin.js); a repo with only SKILL.md is installed as a skill instead of running. Runs ONLY after the user approves that exact run in chat.
+Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, or tests on this phone, but you CAN download a public GitHub repo with download_repo and run a plugin's JavaScript with run_plugin; say so plainly if asked.]`;
 
 export function parseToolCalls(reply: string): AgentToolCall[] {
   const calls: AgentToolCall[] = [];
@@ -91,6 +100,32 @@ export function stripToolBlocks(reply: string): string {
 function argString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
   return typeof v === 'string' ? v : '';
+}
+
+// Find a downloaded repo's runnable entry: package.json "main"
+// first, then the usual entry filenames, then any root-level .js.
+// A repo with no JavaScript but a SKILL.md is a skill set, not a
+// runnable plugin — reported as kind 'skill' so the caller installs
+// it instead of trying to run it.
+async function detectPluginEntry(dir: string): Promise<{ kind: 'code' | 'skill' | 'none'; entry?: string; skillPath?: string }> {
+  const files = await listWorkspaceFiles();
+  const inDir = files.filter((f) => f.path.startsWith(`${dir}/`)).map((f) => f.path.slice(dir.length + 1));
+  if (!inDir.length) return { kind: 'none' };
+  if (inDir.includes('package.json')) {
+    try {
+      const pkg = JSON.parse(await readWorkspaceFile(`${dir}/package.json`)) as { main?: unknown };
+      const main = typeof pkg.main === 'string' ? pkg.main.replace(/^\.\//, '') : '';
+      if (main && main.endsWith('.js') && inDir.includes(main)) return { kind: 'code', entry: `${dir}/${main}` };
+    } catch { /* bad package.json — fall through to filename guesses */ }
+  }
+  for (const cand of ['index.js', 'main.js', 'plugin.js', 'app.js']) {
+    if (inDir.includes(cand)) return { kind: 'code', entry: `${dir}/${cand}` };
+  }
+  const rootJs = inDir.find((f) => !f.includes('/') && f.endsWith('.js'));
+  if (rootJs) return { kind: 'code', entry: `${dir}/${rootJs}` };
+  const skill = inDir.find((f) => f === 'SKILL.md') ?? inDir.find((f) => f.toLowerCase().endsWith('/skill.md'));
+  if (skill) return { kind: 'skill', skillPath: `${dir}/${skill}` };
+  return { kind: 'none' };
 }
 
 // approve() shows the user the exact change and resolves true only
@@ -260,7 +295,76 @@ export async function executeAgentTool(
         return `Error: could not download ${parsed.owner}/${parsed.name} (${e instanceof Error ? e.message : 'download failed'}). The repo may not exist, be private, or be too large for this phone.`;
       }
     }
+    case 'run_plugin': {
+      const target = argString(call.args, 'plugin') || argString(call.args, 'file') || argString(call.args, 'repo');
+      if (!target) return 'Error: run_plugin needs a plugin name, a github.com repo ("owner/name" or URL), or a workspace .js file.';
+      // Resolve to a repo when possible: an installed plugin's repo
+      // first, then a github.com reference in the argument itself.
+      let repoRef: { owner: string; name: string; url: string } | null = null;
+      try {
+        const installed = (await listPlugins()).find((p) => p.name.toLowerCase() === target.toLowerCase());
+        if (installed?.repoUrl) repoRef = parseGitHubRepo(installed.repoUrl);
+      } catch { /* db read failed — fall through to other resolutions */ }
+      if (!repoRef) repoRef = parseGitHubRepo(target);
+      let code = '';
+      let label = target;
+      if (repoRef) {
+        const ref = repoRef;
+        const rel = sectionPath(`repos/${ref.owner}-${ref.name}`);
+        if (!rel) return 'Error: invalid path.';
+        label = `${ref.owner}/${ref.name}`;
+        const files = await listWorkspaceFiles();
+        const already = files.some((f) => f.path.startsWith(`${rel}/`));
+        if (!already) {
+          const okDl = await approve(`Download repo ${ref.owner}/${ref.name}`, `Clones the public repo into ${rel} (latest files only, single branch) so it can run here.`);
+          if (!okDl) return 'Rejected by user.';
+          try {
+            const dir = await workspaceDir();
+            await cloneGitHubRepo(`${dir}${rel}`, ref.url);
+          } catch (e) {
+            return `Error: could not download ${ref.owner}/${ref.name} (${e instanceof Error ? e.message : 'download failed'}).`;
+          }
+        }
+        try {
+          const existing = (await listPlugins()).find((p) => p.repoUrl === ref.url);
+          if (!existing) {
+            await savePlugin({ id: newId(), name: ref.name, description: `GitHub repo ${ref.owner}/${ref.name} (runs on-phone in the WebView sandbox).`, author: ref.owner, repoUrl: ref.url, manifest: '', permissions: '', hasExecutableCode: true, createdAt: nowIso() });
+          }
+        } catch { /* registration is best-effort; running still works */ }
+        const detected = await detectPluginEntry(rel);
+        if (detected.kind === 'skill' && detected.skillPath) {
+          try {
+            const skillText = await readWorkspaceFile(detected.skillPath);
+            const existingSkill = (await listSkills()).find((s) => s.repoUrl === ref.url);
+            if (!existingSkill) {
+              await saveSkill({ id: newId(), botId: null, name: ref.name, template: skillText, source: 'github', repoUrl: ref.url, permissions: '', createdAt: nowIso() });
+            }
+          } catch { /* skill install failed — report below */ }
+          return `This repo has no runnable JavaScript — it is a skill set. Installed as skill "${ref.name}": use "/${ref.name} ..." at the start of a chat message to use it.`;
+        }
+        if (detected.kind !== 'code' || !detected.entry) {
+          return `Error: no runnable JavaScript entry found in ${rel} (looked for package.json main, index.js, main.js, plugin.js, and any root .js file).`;
+        }
+        try { code = await readWorkspaceFile(detected.entry); }
+        catch { return 'Error: could not read the plugin entry file.'; }
+        label = `${label} (${detected.entry})`;
+      } else {
+        const p = sectionPath(target);
+        if (!p) return 'Error: invalid path (paths stay inside the workspace, no "..").';
+        if (!p.endsWith('.js')) return 'Error: run_plugin needs a .js file, a plugin name, or a github.com repo.';
+        try { code = await readWorkspaceFile(p); }
+        catch { return 'Error: could not read that file (it may not exist).'; }
+        label = p;
+      }
+      const okRun = await approve(`Run plugin ${label}`, 'Runs this JavaScript on the phone in the WebView sandbox (no host, no server). It can only use the bridged workspace file + public-page actions; it cannot touch app data or keys.');
+      if (!okRun) return 'Rejected by user.';
+      const res = await runPluginCode({ code, section, approve });
+      const logPart = res.logs.length ? `\nPlugin log:\n${res.logs.join('\n')}` : '';
+      return res.ok
+        ? `Plugin result: ${(res.result ?? '(no result)').slice(0, 4000)}${logPart}`
+        : `Plugin failed: ${res.error ?? 'unknown error'}${logPart}`;
+    }
     default:
-      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read, download_repo, service_request, vercel_deploy, mcp_call.`;
+      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read, download_repo, run_plugin, service_request, vercel_deploy, mcp_call.`;
   }
 }

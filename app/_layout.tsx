@@ -7,6 +7,7 @@ import { getDb } from '../src/lib/db';
 import { BOT_TEMPLATES, nowIso, newId } from '../src/lib/types';
 import { listBots, saveBot } from '../src/lib/db';
 import { DrawerProvider } from '../src/components/Drawer';
+import { PluginRunnerHost } from '../src/components/PluginRunnerHost';
 import { ThemeProvider, useTokens } from '../src/lib/tokens';
 
 // Status bar follows the effective theme: light icons on the dark
@@ -76,6 +77,7 @@ export default function RootLayout() {
         <DrawerProvider>
           <ThemedSafeArea>
             <DeepLinkHandler />
+            <PluginRunnerHost />
             <Stack screenOptions={{ headerShown: false }} />
           </ThemedSafeArea>
         </DrawerProvider>
