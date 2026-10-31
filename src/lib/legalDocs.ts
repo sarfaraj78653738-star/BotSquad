@@ -101,8 +101,18 @@ Contact: GitHub Issues (Report & Feedback). This policy may change; the version 
     id: 'feedback',
     title: 'Report & Feedback',
     body: `• Found a bug, a wrong policy, or something harmful? Report it on the project's GitHub Issues page (button below).
-• Copyright complaints (DMCA): report via GitHub Issues with the work identified, the repo or file URL, and your contact details. We act on valid notices as the law requires.
+• Copyright complaints (DMCA): see the Copyright (DMCA) Policy in this list.
 • Never include passwords, API keys, or private data in a public report.`,
     action: { label: 'Open GitHub Issues', url: 'https://github.com/sarfaraj78653738-star/BotSquad/issues' },
+  },
+  {
+    id: 'dmca',
+    title: 'Copyright (DMCA) Policy',
+    body: `• BotSquad respects copyright. Content you create stays on your device; we do not host your content on a public server.
+• If you believe material in the app infringes your copyright, send a DMCA notice to sarfarajansari7888@gmail.com with: (1) identification of the copyrighted work, (2) identification of the infringing material and where it is in the app, (3) your name and contact details, (4) a statement that you believe in good faith the use is not authorised, (5) a statement that the notice is accurate and you are authorised to act, (6) your signature.
+• On a valid notice, we will remove or disable access to the material and tell the person who added it, where we can.
+• If your material was removed by mistake, send a counter-notice with the same details plus a statement that the removal was a mistake; we will restore it unless the complainant files court action within the time the law allows.
+• Content hosted by someone else (for example a plugin from GitHub) should also be reported to that host; we will remove our link or reference to it on a valid notice.
+• Repeat infringers: content that repeatedly infringes will be blocked from the app.`,
   },
 ];
