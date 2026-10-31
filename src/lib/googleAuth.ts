@@ -17,10 +17,17 @@ import * as SecureStore from 'expo-secure-store';
 // Google REQUIRES custom redirect schemes to contain a period
 // (reverse-DNS style). The old 'botsquad://oauth' has none, so
 // Google rejected every login with 400 invalid_request, error
-// details naming redirect_uri (proven 2026-10-31). This scheme
-// matches the Android package, so it also reads as the app's own
-// address. Path uses a single slash, per Google's documented form.
-export const GOOGLE_REDIRECT_URI = 'com.botsquad.app:/oauth';
+// details naming redirect_uri (proven 2026-10-31). The next try,
+// 'com.botsquad.app:/oauth', passed the format check but failed
+// with redirect_uri_mismatch: for a Desktop client Google only
+// authorizes loopback and the REVERSE-CLIENT-ID scheme — an
+// arbitrary reverse-DNS scheme is not bound to this client.
+// The reverse-ID scheme below is bound to the client by
+// construction (Google's own Desktop doc + googlesamples +
+// GTMAppAuth all use com.googleusercontent.apps.<client-id>).
+// Path uses a single slash, per Google's documented form; any
+// path works, /oauth is kept.
+export const GOOGLE_REDIRECT_URI = 'com.googleusercontent.apps.882528237595-62gau3qef0p0hbdpelq8i2tsgc86l3dk:/oauth';
 
 // Bundled default Client ID (Shafy's Desktop OAuth client, created
 // 2026-10-31). A Client ID is a PUBLIC identifier — safe to embed,
