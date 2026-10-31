@@ -604,7 +604,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
           );
         }}
       />}
-      {loading && <LoadingRow label={universal ? t(language, 'working') : t(language, 'botWorking')} />}
+      {loading && <LoadingRow label={universal ? t(language, 'working') : t(language, 'botWorking')} onStopAds={adsRemoved ? undefined : () => { router.push('/ads-payments'); }} />}
       {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
 
       {failedCode !== null && failedText ? (

@@ -97,13 +97,18 @@ export function AdSlot({ visible }: { visible: boolean }) {
   );
 }
 
-export function LoadingRow({ label }: { label: string }) {
+export function LoadingRow({ label, onStopAds }: { label: string; onStopAds?: () => void }) {
   const tokens = useTokens();
   const styles = getStyles(tokens);
   return (
     <View style={styles.loading}>
       <ActivityIndicator color={tokens.textMuted} />
       <Text style={styles.loadingText}>{label}</Text>
+      {onStopAds ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Stop ads" onPress={onStopAds} style={styles.stopAds}>
+          <Text style={styles.stopAdsText}>Stop ads</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -139,4 +144,6 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   label: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 6 },
   loading: { alignItems: 'center', flexDirection: 'row', gap: 8, paddingVertical: tokens.space.sm },
   loadingText: { color: tokens.textMuted, fontSize: tokens.font.md },
+  stopAds: { marginLeft: 'auto', padding: 4 },
+  stopAdsText: { color: tokens.accent, fontSize: tokens.font.sm, fontWeight: '700' },
 });
