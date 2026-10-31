@@ -5,7 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 // Flow: the app opens Google's own login page in the system browser
 // (PKCE, no client secret — this is the Desktop-type OAuth client
 // from Google Cloud Console, which needs no server and no SHA-1).
-// Google redirects back to teambots://oauth, the app exchanges the
+// Google redirects back to botsquad://oauth, the app exchanges the
 // code directly with Google, and the tokens live only in this phone's
 // SecureStore. Google's server is always in the middle — "no server"
 // means no server of OURS.
@@ -14,7 +14,7 @@ import * as SecureStore from 'expo-secure-store';
 // phase. To add the Gmail connector later, extend SCOPES with
 // 'https://www.googleapis.com/auth/gmail.readonly' — the same flow
 // then returns a Gmail-usable access token.
-export const GOOGLE_REDIRECT_URI = 'teambots://oauth';
+export const GOOGLE_REDIRECT_URI = 'botsquad://oauth';
 
 export const GOOGLE_DISCOVERY = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -26,9 +26,9 @@ export const GOOGLE_SCOPES = ['openid', 'email', 'profile'];
 export type GoogleUser = { name: string; email: string; picture?: string; sub: string };
 type GoogleTokens = { accessToken: string; refreshToken?: string; idToken?: string; expiresAt: number };
 
-const CLIENT_ID_KEY = 'teambots_google_client_id';
-const USER_KEY = 'teambots_google_user';
-const TOKENS_KEY = 'teambots_google_tokens';
+const CLIENT_ID_KEY = 'botsquad_google_client_id';
+const USER_KEY = 'botsquad_google_user';
+const TOKENS_KEY = 'botsquad_google_tokens';
 
 export async function getGoogleClientId(): Promise<string | null> {
   return SecureStore.getItemAsync(CLIENT_ID_KEY);

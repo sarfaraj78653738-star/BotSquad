@@ -31,7 +31,7 @@
     "typescript": "~5.3.0"
   },
   "main": "expo-router/entry",
-  "name": "teambots",
+  "name": "botsquad",
   "private": true,
   "scripts": {
     "android": "expo run:android",

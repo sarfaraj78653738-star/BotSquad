@@ -6,7 +6,7 @@ import { ProviderId } from './types';
 // except to the provider the user chose, in a direct HTTPS call from the device.
 export async function getApiKey(provider: ProviderId): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(`teambots_key_${provider}`);
+    return await SecureStore.getItemAsync(`botsquad_key_${provider}`);
   } catch {
     return null;
   }
@@ -14,10 +14,10 @@ export async function getApiKey(provider: ProviderId): Promise<string | null> {
 
 export async function setApiKey(provider: ProviderId, key: string): Promise<void> {
   if (!key.trim()) {
-    await SecureStore.deleteItemAsync(`teambots_key_${provider}`);
+    await SecureStore.deleteItemAsync(`botsquad_key_${provider}`);
     return;
   }
-  await SecureStore.setItemAsync(`teambots_key_${provider}`, key.trim());
+  await SecureStore.setItemAsync(`botsquad_key_${provider}`, key.trim());
 }
 
 export async function hasApiKey(provider: ProviderId): Promise<boolean> {

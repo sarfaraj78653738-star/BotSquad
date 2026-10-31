@@ -29,7 +29,7 @@ function ThemedSafeArea({ children }: { children: React.ReactNode }) {
 }
 
 // Deep links from Android home-screen shortcuts ("Add to home"):
-// teambots://open?kind=main&chatId=… | kind=bot&botId=… |
+// botsquad://open?kind=main&chatId=… | kind=bot&botId=… |
 // kind=group&threadId=…. Parsed by hand (no URLSearchParams reliance)
 // and routed to the exact thread. Malformed links are ignored.
 function DeepLinkHandler() {
@@ -38,7 +38,7 @@ function DeepLinkHandler() {
   useEffect(() => {
     if (!navState?.key) return;
     const handle = (url: string | null) => {
-      if (!url || !url.startsWith('teambots://open')) return;
+      if (!url || !url.startsWith('botsquad://open')) return;
       try {
         const query = url.split('?')[1] ?? '';
         const params: Record<string, string> = {};

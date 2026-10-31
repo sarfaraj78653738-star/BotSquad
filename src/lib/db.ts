@@ -5,7 +5,7 @@ let db: SQLite.SQLiteDatabase | null = null;
 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
-  db = await SQLite.openDatabaseAsync('teambots.db');
+  db = await SQLite.openDatabaseAsync('botsquad.db');
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS bots (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, avatar_color TEXT NOT NULL, avatar_icon TEXT NOT NULL, task TEXT NOT NULL DEFAULT '', personality TEXT NOT NULL DEFAULT '', instructions TEXT NOT NULL DEFAULT '', boundaries TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL, model TEXT NOT NULL, endpoint TEXT, is_pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);

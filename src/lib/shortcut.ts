@@ -21,7 +21,7 @@ export async function addChatToHome(label: string, uri: string): Promise<'added'
 }
 
 export function shortcutUri(kind: 'main' | 'bot' | 'group', id: string): string {
-  if (kind === 'main') return `teambots://open?kind=main&chatId=${encodeURIComponent(id)}`;
-  if (kind === 'bot') return `teambots://open?kind=bot&botId=${encodeURIComponent(id)}`;
-  return `teambots://open?kind=group&threadId=${encodeURIComponent(id)}`;
+  if (kind === 'main') return `botsquad://open?kind=main&chatId=${encodeURIComponent(id)}`;
+  if (kind === 'bot') return `botsquad://open?kind=bot&botId=${encodeURIComponent(id)}`;
+  return `botsquad://open?kind=group&threadId=${encodeURIComponent(id)}`;
 }

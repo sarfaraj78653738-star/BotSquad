@@ -6,15 +6,15 @@ import * as SecureStore from 'expo-secure-store';
 // (see bot_connections in db.ts).
 export async function setConnectionToken(connectionId: string, token: string): Promise<void> {
   if (!token.trim()) {
-    await SecureStore.deleteItemAsync(`teambots_conn_${connectionId}`);
+    await SecureStore.deleteItemAsync(`botsquad_conn_${connectionId}`);
     return;
   }
-  await SecureStore.setItemAsync(`teambots_conn_${connectionId}`, token.trim());
+  await SecureStore.setItemAsync(`botsquad_conn_${connectionId}`, token.trim());
 }
 
 export async function getConnectionToken(connectionId: string): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(`teambots_conn_${connectionId}`);
+    return await SecureStore.getItemAsync(`botsquad_conn_${connectionId}`);
   } catch {
     return null;
   }
@@ -24,24 +24,24 @@ export async function getConnectionToken(connectionId: string): Promise<string |
 // token. Previously deleteConnection/deleteMcpServer removed only the DB
 // row, leaving the credential in SecureStore indefinitely.
 export async function deleteConnectionToken(connectionId: string): Promise<void> {
-  try { await SecureStore.deleteItemAsync(`teambots_conn_${connectionId}`); } catch { /* already gone */ }
+  try { await SecureStore.deleteItemAsync(`botsquad_conn_${connectionId}`); } catch { /* already gone */ }
 }
 
 export async function deleteMcpToken(serverId: string): Promise<void> {
-  try { await SecureStore.deleteItemAsync(`teambots_mcp_${serverId}`); } catch { /* already gone */ }
+  try { await SecureStore.deleteItemAsync(`botsquad_mcp_${serverId}`); } catch { /* already gone */ }
 }
 
 export async function setMcpToken(serverId: string, token: string): Promise<void> {
   if (!token.trim()) {
-    await SecureStore.deleteItemAsync(`teambots_mcp_${serverId}`);
+    await SecureStore.deleteItemAsync(`botsquad_mcp_${serverId}`);
     return;
   }
-  await SecureStore.setItemAsync(`teambots_mcp_${serverId}`, token.trim());
+  await SecureStore.setItemAsync(`botsquad_mcp_${serverId}`, token.trim());
 }
 
 export async function getMcpToken(serverId: string): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(`teambots_mcp_${serverId}`);
+    return await SecureStore.getItemAsync(`botsquad_mcp_${serverId}`);
   } catch {
     return null;
   }

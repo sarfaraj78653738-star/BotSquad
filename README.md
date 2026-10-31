@@ -1,4 +1,4 @@
-# TeamBots — Phase 1 (placeholder brand, NOT final)
+# BotSquad
 
 Clean-room, original code and copy. No affiliation with any other AI product.
 No server. First launch signs in with Google, then opens straight to Main Chat — after that, no login screen again. Your chats stay on your device; your API keys stay in
