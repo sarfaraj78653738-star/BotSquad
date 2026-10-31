@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { getDb } from '../src/lib/db';
 import { getGoogleUser } from '../src/lib/googleAuth';
+import { getAgreement } from '../src/lib/agreement';
 import { syncPremiumFromGrant } from '../src/lib/premium';
 import { BOT_TEMPLATES, nowIso, newId } from '../src/lib/types';
 import { listBots, saveBot } from '../src/lib/db';
@@ -100,7 +101,10 @@ function DeepLinkHandler() {
 // Guests may only be on /login (the gate itself) or /legal
 // (Terms/Privacy linked from the login screen); anywhere else
 // bounces to /login. Signed-in users on /login bounce to Main
-// Chat. Auth is re-checked on every route change, so a sign-in
+// Chat. Signed-in users who have not yet agreed to the terms +
+// confirmed 18+ (see src/lib/agreement.ts) see /agree first,
+// except /legal so they can read the terms; agreed users on
+// /agree bounce to Main Chat. Auth is re-checked on every route change, so a sign-in
 // or sign-out takes effect immediately instead of bouncing the
 // user back on stale state.
 function AuthGate() {
@@ -109,30 +113,42 @@ function AuthGate() {
   const segments = useSegments();
   const navState = useRootNavigationState();
   const [auth, setAuth] = useState<'loading' | 'authed' | 'guest'>('loading');
+  const [agreed, setAgreed] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(true);
   const [booted, setBooted] = useState(false);
   useEffect(() => {
     if (!navState?.key) return;
     let alive = true;
     setChecking(true);
-    getGoogleUser().then((u) => {
+    getGoogleUser().then(async (u) => {
       if (!alive) return;
       setAuth(u ? 'authed' : 'guest');
+      if (u) {
+        const a = await getAgreement().catch(() => null);
+        if (!alive) return;
+        setAgreed(a !== null);
+      } else {
+        setAgreed(null);
+      }
       setChecking(false);
     }).catch(() => {
       if (!alive) return;
       setAuth('guest');
+      setAgreed(null);
       setChecking(false);
     });
     return () => { alive = false; };
   }, [navState?.key, segments]);
   useEffect(() => {
     if (checking || auth === 'loading') return;
+    if (auth === 'authed' && agreed === null) return;
     const seg = segments[0];
     if (auth === 'guest' && seg !== 'login' && seg !== 'legal') router.replace('/login');
-    else if (auth === 'authed' && seg === 'login') router.replace('/');
+    else if (auth === 'authed' && seg === 'login') router.replace(agreed ? '/' : '/agree');
+    else if (auth === 'authed' && !agreed && seg !== 'agree' && seg !== 'legal') router.replace('/agree');
+    else if (auth === 'authed' && agreed && seg === 'agree') router.replace('/');
     else setBooted(true);
-  }, [auth, checking, segments, router]);
+  }, [auth, agreed, checking, segments, router]);
   // Boot gate: a plain overlay View does NOT cover the navigator on
   // Android, so guests saw Main Chat for 1-2s while the session check
   // ran. A Modal renders above the navigator, and it stays up until
