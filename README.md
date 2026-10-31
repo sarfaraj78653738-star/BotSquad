@@ -1,6 +1,6 @@
 <div align="center">
 
-![BotSquad logo](docs/botsquad-logo.png)
+![BotSquad banner](docs/botsquad-banner.png)
 
 # BotSquad
 
