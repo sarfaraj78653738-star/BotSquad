@@ -23,7 +23,7 @@ export async function listMcpTools(serverId: string, url: string): Promise<McpTo
   const init = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'TeamBots', version: '0.1.0' } } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'BotSquad', version: '0.1.0' } } }),
   });
   if (!init.ok) throw new Error(`MCP server returned HTTP ${init.status}. Check the URL and token.`);
   const list = await fetch(url, {

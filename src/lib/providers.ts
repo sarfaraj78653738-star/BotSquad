@@ -47,7 +47,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
     throw new ProviderError('BAD_PROVIDER', 'The universal provider is unknown. Pick one of: openai-compatible, anthropic, gemini.');
   }
   const key = await getApiKey(provider);
-  if (!key) throw new ProviderError('NO_KEY', 'No API key set for this provider. Add your own key in Settings — TeamBots does not supply one.');
+  if (!key) throw new ProviderError('NO_KEY', 'No API key set for this provider. Add your own key in Settings — BotSquad does not supply one.');
   const model = universal.model;
   const capped = capHistory(history, systemPrompt, userText, universal.contextWindow);
   try {

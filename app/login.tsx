@@ -14,7 +14,7 @@ import { t } from '../src/lib/i18n';
 
 WebBrowser.maybeCompleteAuthSession();
 
-// Login screen (user order 2026-10-29, after the Claude screenshot):
+// Login screen (user order 2026-10-29):
 // exactly ONE option — Continue with Google — and nothing else. No
 // email field, no OR divider. Top: the app name. Middle: the logo
 // with one short line under it. Bottom: the Google button, then the

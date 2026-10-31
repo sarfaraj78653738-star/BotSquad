@@ -1,0 +1,7 @@
+name = "botsquad-razorpay"
+main = "worker.js"
+compatibility_date = "2026-10-31"
+
+[[kv_namespaces]]
+binding = "GRANTS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

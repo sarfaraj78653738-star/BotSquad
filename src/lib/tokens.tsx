@@ -1,4 +1,4 @@
-// TeamBots design tokens — warm paper palette, original TeamBots design.
+// BotSquad design tokens — warm paper palette, original BotSquad design.
 // Components must use these tokens, never raw hex values.
 //
 // THEMING: the app follows the phone's system setting. `useTokens()` is
@@ -37,7 +37,7 @@ export const lightTokens = {
   scrim: 'rgba(33, 29, 24, 0.4)',
 } as const;
 
-// Dark palette — TeamBots' own warm/charcoal family, not a copy of any
+// Dark palette — BotSquad's own warm/charcoal family, not a copy of any
 // other app's dark theme. Backgrounds are dark warm brown, surfaces are
 // charcoal, text is warm off-white, and primary buttons flip to a light
 // warm tone so they stay distinct from the dark surface (in light mode

@@ -1,6 +1,6 @@
 // GitHub install — UNIVERSAL detector, preview first, install only on approval.
 // Recognises, at minimum:
-//  (a) Claude-style skills: SKILL.md (+ supporting .md files) -> Skill
+//  (a) Agent skills: SKILL.md (+ supporting .md files) -> Skill
 //  (b) Plugin bundles: plugin.json / manifest with skills + actions -> Plugin (+ Skills)
 //  (c) MCP servers: server.json, mcp.json, package.json with an MCP entry,
 //      pyproject.toml for a Python MCP server -> MCP Connection, NOT phone code
@@ -91,7 +91,7 @@ export async function previewGithubRepo(url: string): Promise<GithubPreview> {
     fetchText(`${raw}/SKILL.md`),
     fetchText(`${raw}/README.md`),
   ]);
-  // Also look for a nested SKILL.md (Claude skills often live in skills/<name>/SKILL.md).
+  // Also look for a nested SKILL.md (Agent skills often live in skills/<name>/SKILL.md).
   let nestedSkill = '';
   const nestedSkillPath = files.find((f) => f.toLowerCase().endsWith('/skill.md'));
   if (!skillMd && nestedSkillPath) nestedSkill = await fetchText(`${raw}/${nestedSkillPath}`);

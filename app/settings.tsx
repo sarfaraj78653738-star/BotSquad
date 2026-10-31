@@ -28,7 +28,7 @@ import { t } from '../src/lib/i18n';
 // Nothing stacks all of them on one page. Deliberately NOT here: no
 // Sharing section, no Voice section, no Upgrade/Billing, no
 // Capabilities toggles (no code execution, no web search toggle, no
-// memory-from-chats toggle — TeamBots has none of those), no
+// memory-from-chats toggle — BotSquad has none of those), no
 // Notifications toggle (no notification system), no Time & focus.
 const MENU: { labelKey: string; detailKey: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
   { labelKey: 'modelSetup', detailKey: 'modelSetupDetail', icon: 'cpu', route: '/model-setup' },

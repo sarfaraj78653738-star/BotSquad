@@ -407,12 +407,15 @@ export default function GroupScreen() {
                   </View>
                   <Text style={styles.assistantText}>{item.text}</Text>
                   {item.role === 'assistant' && (
-                    <Pressable
-                      accessibilityLabel="Save as artifact"
-                      onPress={async () => { await saveArtifactFromReply(item.text); setDialog({ title: t(language, 'saved'), message: t(language, 'savedToArtifacts'), buttons: [{ text: 'OK' }] }); }}
-                    >
-                      <Text style={styles.saveArtifact}>{t(language, 'saveAsArtifact')}</Text>
-                    </Pressable>
+                    <View style={styles.msgActions}>
+                      <Pressable
+                        accessibilityLabel="Save as artifact"
+                        onPress={async () => { await saveArtifactFromReply(item.text); setDialog({ title: t(language, 'saved'), message: t(language, 'savedToArtifacts'), buttons: [{ text: 'OK' }] }); }}
+                      >
+                        <Text style={styles.saveArtifact}>{t(language, 'saveAsArtifact')}</Text>
+                      </Pressable>
+                      <Text style={styles.mistakeNote}>AI can make mistakes</Text>
+                    </View>
                   )}
                 </View>
               );
@@ -479,7 +482,9 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   failedText: { color: tokens.danger, fontSize: tokens.font.md, fontWeight: '700' },
   retryButton: { backgroundColor: tokens.accent, borderRadius: tokens.radius.md, paddingHorizontal: 16, paddingVertical: 8 },
   retryText: { color: tokens.onAccent, fontSize: tokens.font.md, fontWeight: '700' },
-  saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700', marginTop: 8 },
+  saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700' },
+  msgActions: { alignItems: 'center', flexDirection: 'row', gap: 16, marginTop: 8 },
+  mistakeNote: { color: tokens.textMuted, fontSize: 12 },
   deleteText: { color: tokens.danger, fontSize: tokens.font.sm, fontWeight: '700' },
   threadRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   threadTitle: { flex: 1 },

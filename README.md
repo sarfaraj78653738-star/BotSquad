@@ -58,7 +58,7 @@ the device secure store and are sent only to the provider you chose.
   no npm packages that need Node built-ins. The plugin can only use
   the bridged workspace files and public-page reads; it never sees
   your keys or app data. Plugins that need a server still need one.
-- First launch: the Claude-style login screen (Continue with Google
+- First launch: the login screen (Continue with Google
   only) appears before Main Chat. Once signed in, it never appears
   again. Settings has Log out and Delete account, both with a
   confirmation popup; Delete account wipes the sign-in, all local
@@ -95,3 +95,14 @@ npx expo start
 - `src/lib/` — tokens, types, db (SQLite), keys (SecureStore), prompt,
   providers, ads (placeholder), connections, mcp, github (universal detector).
 - `src/components/ui.tsx` — token-only primitives.
+
+## Payments (Razorpay, webhook-verified)
+
+Remove Ads costs $5, one time. Payment runs through Razorpay
+Checkout in an in-app WebView. Premium activates ONLY after the
+Cloudflare Worker (`server/razorpay-worker/`) verifies the Razorpay
+webhook signature — a checkout success screen alone never grants it.
+A user who retries payment is charged once: buying is blocked when
+premium is active, an unfinished order is reused, and the Worker
+dedupes webhooks by payment id. Setup (Worker URL + Razorpay key id)
+goes in `src/lib/premium.ts`; secrets live only in the Worker env.

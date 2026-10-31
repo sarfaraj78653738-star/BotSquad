@@ -598,6 +598,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
                 >
                   <Text style={styles.saveArtifact}>{t(language, 'saveAsArtifact')}</Text>
                 </Pressable>
+                <Text style={styles.mistakeNote}>AI can make mistakes</Text>
               </View>
             </View>
           );
@@ -667,6 +668,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   assistantText: { color: tokens.text, fontSize: tokens.font.md, lineHeight: 24 },
   botLabel: { color: tokens.text, fontSize: tokens.font.sm, fontWeight: '700', marginBottom: 4 },
   saveArtifact: { color: tokens.textMuted, fontSize: tokens.font.sm, fontWeight: '700' },
+  mistakeNote: { color: tokens.textMuted, fontSize: 12 },
   approvalCard: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, marginHorizontal: tokens.space.md, marginBottom: 8, padding: tokens.space.md },
   approvalPreview: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 6 },
   approvalRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
