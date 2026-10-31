@@ -13,7 +13,12 @@ import { Text, TextInput, useColorScheme } from 'react-native';
 import { getSetting, setSetting } from './db';
 
 const base = {
-  radius: { sm: 8, md: 10, lg: 12 },
+  // Shape lock (appllama anti-slop, 2026-10-31): every UI-chrome radius
+  // comes from this scale — pills/circles 999, dialogs/cards xl 16,
+  // chat bubbles lg 12, inputs/buttons md 10, small elements sm 8.
+  // Full-bleed panels are square (0) by exception; drawn shapes
+  // (avatar parts) are not UI chrome and are exempt.
+  radius: { sm: 8, md: 10, lg: 12, xl: 16 },
   space: { xs: 6, sm: 10, md: 16, lg: 24 },
   font: { sm: 14, md: 16, lg: 19, xl: 28 },
 } as const;

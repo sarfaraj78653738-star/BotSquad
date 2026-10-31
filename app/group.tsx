@@ -492,7 +492,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   h: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 8, marginTop: 16 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerRight: { alignItems: 'center', flexDirection: 'row', gap: 6 },
-  menuButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 17, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
+  menuButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   input: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, color: tokens.text, fontSize: tokens.font.md, marginBottom: 12, padding: 14 },
   name: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },

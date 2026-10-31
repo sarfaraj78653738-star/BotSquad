@@ -130,7 +130,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   tagline: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '700', textAlign: 'center' },
   bottom: { gap: 12, padding: tokens.space.md, paddingBottom: 24 },
   googleButton: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: tokens.border, borderRadius: 999, borderWidth: 1, flexDirection: 'row', gap: 10, justifyContent: 'center', paddingVertical: 14 },
-  gMark: { alignItems: 'center', borderColor: '#1E1A16', borderRadius: 14, borderWidth: 1, height: 28, justifyContent: 'center', width: 28 },
+  gMark: { alignItems: 'center', borderColor: '#1E1A16', borderRadius: 999, borderWidth: 1, height: 28, justifyContent: 'center', width: 28 },
   gLetter: { color: '#1E1A16', fontSize: 16, fontWeight: '800' },
   googleButtonText: { color: '#1E1A16', fontSize: tokens.font.md, fontWeight: '700' },
   signedIn: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700', textAlign: 'center' },

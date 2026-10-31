@@ -676,7 +676,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   approvalTitle: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800' },
   composerWrap: { paddingBottom: 12, paddingHorizontal: tokens.space.md, paddingTop: 4 },
   headerActions: { alignItems: 'center', flexDirection: 'row', gap: 2 },
-  headerIconButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 17, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
+  headerIconButton: { alignItems: 'center', backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
   failedRow: { alignItems: 'center', borderTopColor: tokens.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   failedText: { color: tokens.danger, fontSize: tokens.font.md, fontWeight: '700' },
   list: { flex: 1 },

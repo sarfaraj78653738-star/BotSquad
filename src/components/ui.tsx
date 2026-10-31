@@ -132,7 +132,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   buttonTextDanger: { color: tokens.danger },
   buttonTextSecondary: { color: tokens.text },
   card: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.lg, borderWidth: 1, marginBottom: 12, padding: 18 },
-  checkBox: { alignItems: 'center', borderColor: tokens.border, borderRadius: 6, borderWidth: 1.5, height: 22, justifyContent: 'center', width: 22 },
+  checkBox: { alignItems: 'center', borderColor: tokens.border, borderRadius: tokens.radius.sm, borderWidth: 1.5, height: 22, justifyContent: 'center', width: 22 },
   checkBoxSelected: { backgroundColor: tokens.accent, borderColor: tokens.accent },
   checkLabel: { color: tokens.text, fontSize: tokens.font.md },
   checkRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },

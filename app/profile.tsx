@@ -101,7 +101,7 @@ export default function ProfileScreen() {
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
-  avatar: { alignItems: 'center', backgroundColor: tokens.surfaceMuted, borderColor: tokens.border, borderRadius: 48, borderWidth: 1, height: 96, justifyContent: 'center', overflow: 'hidden', width: 96 },
+  avatar: { alignItems: 'center', backgroundColor: tokens.surfaceMuted, borderColor: tokens.border, borderRadius: 999, borderWidth: 1, height: 96, justifyContent: 'center', overflow: 'hidden', width: 96 },
   avatarBlock: { alignItems: 'center', gap: 10, marginBottom: tokens.space.md },
   avatarImage: { height: 96, width: 96 },
   avatarText: { color: tokens.text, fontSize: 36, fontWeight: '800' },

@@ -54,7 +54,7 @@ export function AlertDialog({ visible, title, message, buttons, onDismiss }: {
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   backdrop: { alignItems: 'center', backgroundColor: tokens.scrim, flex: 1, justifyContent: 'center', paddingHorizontal: 32 },
-  dialog: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: 16, borderWidth: 1, padding: 20, width: '100%' },
+  dialog: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.xl, borderWidth: 1, padding: 20, width: '100%' },
   title: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },
   message: { color: tokens.textMuted, fontSize: tokens.font.md, lineHeight: 22, marginTop: 8 },
   buttons: { flexDirection: 'row', gap: 20, justifyContent: 'flex-end', marginTop: 20 },
