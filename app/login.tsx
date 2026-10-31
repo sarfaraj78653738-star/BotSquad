@@ -1,6 +1,7 @@
 import { useAuthRequest } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useMemo, useState } from 'react';
+import * as Linking from 'expo-linking';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -58,48 +59,112 @@ export default function LoginScreen() {
     })().catch(() => setClientIdLoaded(true));
   }, []);
 
-  useEffect(() => {
-    if (response?.type !== 'success' || !request?.codeVerifier || !clientId) return;
-    const code = response.params.code;
-    const verifier = request.codeVerifier;
-    if (!code || !verifier) return;
-    (async () => {
-      setBusy(true);
+  // Guards the token exchange so the auth-session response path and
+  // the Linking-listener path below can never exchange the same code
+  // twice (Google codes are single-use; a second exchange fails).
+  const exchangeRef = useRef(false);
+  // Latest request/clientId for the listener closure (the listener is
+  // registered once, so it reads these through refs).
+  const requestRef = useRef(request);
+  const clientIdRef = useRef(clientId);
+  useEffect(() => { requestRef.current = request; }, [request]);
+  useEffect(() => { clientIdRef.current = clientId; }, [clientId]);
+
+  const finishSignIn = useCallback(async (code: string, verifier: string, cid: string) => {
+    if (exchangeRef.current) return;
+    exchangeRef.current = true;
+    setBusy(true);
+    try {
+      const u = await completeGoogleSignIn(code, verifier, cid);
+      setUser(u);
+      setMsg('');
+      // Fill the Profile screen from the Google account (user order
+      // 2026-10-31): only fields the user has not already filled,
+      // so later manual edits are never overwritten. Then open
+      // Main Chat — the launch gate keeps logged-in users out of
+      // this screen from now on.
       try {
-        const u = await completeGoogleSignIn(code, verifier, clientId);
-        setUser(u);
-        setMsg('');
-        // Fill the Profile screen from the Google account (user order
-        // 2026-10-31): only fields the user has not already filled,
-        // so later manual edits are never overwritten. Then open
-        // Main Chat — the launch gate keeps logged-in users out of
-        // this screen from now on.
-        try {
-          const [savedName, savedCall, savedPhoto] = await Promise.all([
-            getSetting('profile_full_name'),
-            getSetting('profile_call_name'),
-            getSetting('profile_photo_uri'),
-          ]);
-          if (!savedName && u.name) await setSetting('profile_full_name', u.name);
-          if (!savedCall && u.name) await setSetting('profile_call_name', u.name.split(' ')[0] ?? u.name);
-          if (!savedPhoto && u.picture) await setSetting('profile_photo_uri', u.picture);
-        } catch { /* profile fill is best-effort */ }
-        router.replace('/');
-      } catch (e) {
-        setMsg(e instanceof Error ? e.message : t(language, 'signInFailed'));
-      } finally {
-        setBusy(false);
+        const [savedName, savedCall, savedPhoto] = await Promise.all([
+          getSetting('profile_full_name'),
+          getSetting('profile_call_name'),
+          getSetting('profile_photo_uri'),
+        ]);
+        if (!savedName && u.name) await setSetting('profile_full_name', u.name);
+        if (!savedCall && u.name) await setSetting('profile_call_name', u.name.split(' ')[0] ?? u.name);
+        if (!savedPhoto && u.picture) await setSetting('profile_photo_uri', u.picture);
+      } catch { /* profile fill is best-effort */ }
+      router.replace('/');
+    } catch (e) {
+      exchangeRef.current = false; // allow retry with a fresh code
+      setMsg(e instanceof Error ? e.message : t(language, 'signInFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }, [language, router]);
+
+  useEffect(() => {
+    if (!response) return;
+    if (response.type === 'error') {
+      const desc = response.error?.description ?? response.params?.error ?? '';
+      setMsg(desc ? `Sign-in error: ${desc}` : t(language, 'signInFailed'));
+      return;
+    }
+    if (response.type !== 'success') {
+      // Dismiss/cancel/locked: the browser closed without a usable
+      // redirect. Never stay silent here — the 2026-10-31 video
+      // showed a silent return to this screen twice.
+      setMsg('Sign-in did not finish. Tap Continue with Google again.');
+      return;
+    }
+    const code = response.params.code;
+    const verifier = request?.codeVerifier;
+    if (!code || !verifier || !clientId) return;
+    void finishSignIn(code, verifier, clientId);
+  }, [response, request, clientId, finishSignIn, language]);
+
+  // Backup completion path (2026-10-31): on Android the auth session
+  // is a polyfill racing a Linking event against the app coming back
+  // to the foreground; if the foreground wins, the session resolves
+  // 'dismiss' and the redirect URL never reaches the hook — the login
+  // then stuck silently. This permanent listener catches the redirect
+  // URL whenever it arrives and runs the same guarded exchange, so a
+  // lost race can no longer strand the user on this screen.
+  useEffect(() => {
+    const sub = Linking.addEventListener('url', (event) => {
+      if (!event.url.startsWith(GOOGLE_REDIRECT_URI)) return;
+      const query = event.url.split('?')[1] ?? '';
+      const params = new URLSearchParams(query);
+      const err = params.get('error');
+      if (err) { setMsg(`Google sign-in error: ${err}`); return; }
+      const code = params.get('code');
+      const state = params.get('state');
+      const req = requestRef.current;
+      if (!code) return;
+      if (!req || state !== req.state) {
+        setMsg('Sign-in session did not match. Tap Continue with Google again.');
+        return;
       }
-    })();
-  }, [response, request, clientId]);
+      const verifier = req.codeVerifier;
+      const cid = clientIdRef.current;
+      if (!verifier || !cid) {
+        setMsg('Sign-in session expired. Tap Continue with Google again.');
+        return;
+      }
+      void finishSignIn(code, verifier, cid);
+    });
+    return () => sub.remove();
+  }, [finishSignIn]);
 
   async function signIn() {
     if (!request || !clientId) return;
     setMsg('');
+    setBusy(true);
     try {
       await promptAsync();
     } catch {
       setMsg(t(language, 'couldNotOpenSignIn'));
+    } finally {
+      setBusy(false);
     }
   }
 
