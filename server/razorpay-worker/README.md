@@ -44,8 +44,13 @@ Settings > Webhooks > Add webhook:
 - URL: `<Worker URL>/webhook`
 - Events: `subscription.activated`, `subscription.charged`,
   `subscription.cancelled`, `subscription.halted`,
-  `subscription.paused`, `subscription.completed`
-  (NOT `payment.captured` anymore — subscription status governs)
+  `subscription.paused`, `subscription.completed`,
+  `refund.processed`, `payment.dispute.lost`
+  (NOT `payment.captured` anymore — subscription status governs.
+  `refund.processed` / `payment.dispute.lost` close the pay → refund →
+  cancel-before-renewal loophole: they cancel that subscription
+  immediately and revoke premium, unless another active subscription
+  still covers the user.)
 - Secret: the same value you set as RAZORPAY_WEBHOOK_SECRET
 
 ## 5. Wire the app
@@ -66,11 +71,16 @@ button honestly reports that payments are being set up.
    success screen alone grants nothing).
 4. Subscribe twice for the same user: the second buy must be blocked
    ("already have an active subscription").
-5. Cancel from the app: premium must STAY on (cancel is at the end
-   of the billing period — the paid month continues).
-6. To test revoke without waiting a month: cancel the test
+5. Cancel from the app: premium must go OFF on relaunch
+   (cancellation is immediate — user choice 2026-10-31).
+6. Loophole test: refund a test payment from the dashboard →
+   that subscription must be cancelled and premium off on relaunch
+   (proves the payment → invoice → subscription chain; if it does
+   not fire in test mode, fall back to cancelling via the dashboard
+   manually whenever a refund is granted).
+7. To test revoke without waiting a month: cancel the test
    subscription immediately from the Razorpay dashboard (not the
-   app's cycle-end cancel) → `subscription.cancelled` webhook →
+   app's cancel) → `subscription.cancelled` webhook →
    relaunch the app → premium off, ads return.
-7. A failed test payment must NOT revoke premium (only `halted` does).
-8. Switch to live keys + a live Plan only after test passes.
+8. A failed test payment must NOT revoke premium (only `halted` does).
+9. Switch to live keys + a live Plan only after test passes.

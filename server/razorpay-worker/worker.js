@@ -18,16 +18,22 @@
 //   POST /create-subscription { userId } -> { subscriptionId, keyId }
 //     or { alreadyGranted: true } when the user already has an active
 //     subscription.
-//   POST /cancel-subscription { userId } -> { ok: true } (cancels AT
-//     the end of the current billing period; the grant stays until the
-//     subscription.cancelled webhook fires) or { nothingToCancel: true }.
+//   POST /cancel-subscription { userId } -> { ok: true } (cancels
+//     IMMEDIATELY — user choice 2026-10-31; the cancelled webhook
+//     then revokes the grant) or { nothingToCancel: true }.
 //   POST /webhook — Razorpay calls this. The signature is verified with
 //     the webhook secret before anything is trusted. Subscription
 //     status is the SOLE source of truth: activated/charged grant,
 //     cancelled/halted/paused/completed revoke. A payment.failed alone
 //     never revokes (Razorpay retries; halted revokes if it gives up).
-//     A refund of one month's charge also never revokes — the
-//     subscription stays active and the next charge still comes.
+//     LOOPHOLE CLOSE (2026-10-31): a refund (refund.processed) or a
+//     lost chargeback (payment.dispute.lost) cancels that subscription
+//     IMMEDIATELY and revokes premium, unless another active
+//     subscription still covers the user (duplicate guard, via the
+//     subs:<userId> list). Otherwise pay → refund → cancel before
+//     renewal would yield a free month. The payment → subscription
+//     mapping goes payment → invoice → subscription via the Razorpay
+//     API, defensively (any lookup failure revokes nothing).
 //   GET  /grant?userId=... -> { granted: true|false }
 //
 // Double-subscription guards: the app reuses a pending subscription
@@ -123,7 +129,7 @@ export default {
       const res = await fetch(`https://api.razorpay.com/v1/subscriptions/${subscriptionId}/cancel`, {
         method: 'POST',
         headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+        body: JSON.stringify({ cancel_at_cycle_end: 0 }),
       });
       if (!res.ok) return json({ error: 'cancel failed' }, 502);
       return json({ ok: true });
@@ -158,6 +164,15 @@ export default {
             );
             await env.GRANTS.put(`sub:${subId}`, userId);
             await env.GRANTS.delete(`pending:${subId}`);
+            // Track every active subscription per user (duplicate
+            // guard: a refund for one sub must not kill premium
+            // covered by another).
+            try {
+              const raw = await env.GRANTS.get(`subs:${userId}`);
+              const list = raw ? JSON.parse(raw) : [];
+              if (!list.includes(subId)) list.push(subId);
+              await env.GRANTS.put(`subs:${userId}`, JSON.stringify(list));
+            } catch { /* list is best-effort; the grant above rules */ }
           }
         }
       }
@@ -170,17 +185,95 @@ export default {
             || (await env.GRANTS.get(`sub:${subId}`))
             || (await env.GRANTS.get(`pending:${subId}`));
           if (userId) {
-            await env.GRANTS.delete(`grant:${userId}`);
             await env.GRANTS.delete(`sub:${subId}`);
             await env.GRANTS.delete(`pending:${subId}`);
+            // Revoke only when NO other active subscription covers the
+            // user (duplicate guard); otherwise re-point the grant.
+            // On a list read failure, leave the grant alone — never
+            // punish the user for our own error.
+            let remaining = null;
+            try {
+              const raw = await env.GRANTS.get(`subs:${userId}`);
+              remaining = (raw ? JSON.parse(raw) : []).filter((id) => id !== subId);
+              await env.GRANTS.put(`subs:${userId}`, JSON.stringify(remaining));
+            } catch { remaining = null; }
+            if (remaining !== null && remaining.length === 0) {
+              await env.GRANTS.delete(`grant:${userId}`);
+            } else if (remaining !== null && remaining.length > 0) {
+              await env.GRANTS.put(
+                `grant:${userId}`,
+                JSON.stringify({ subscription_id: remaining[0], status: 'active', at: new Date().toISOString() }),
+              );
+            }
           }
+        }
+      }
+      // LOOPHOLE CLOSE: pay → refund → cancel before renewal must not
+      // yield a free month. A refund (merchant or chargeback-lost)
+      // cancels that subscription IMMEDIATELY and revokes premium
+      // unless another active subscription still covers the user.
+      // Mapping is payment → invoice → subscription via the Razorpay
+      // API; every step is defensive — any lookup failure or missing
+      // field revokes nothing (the manual dashboard process covers it).
+      // Dispute payload shape follows the standard pattern
+      // (payload.dispute.entity); if it ever differs, paymentId is
+      // undefined and nothing happens.
+      if (event.event === 'refund.processed' || event.event === 'payment.dispute.lost') {
+        const paymentId = event.event === 'refund.processed'
+          ? event.payload?.refund?.entity?.payment_id
+          : event.payload?.dispute?.entity?.payment_id;
+        if (paymentId) {
+          try {
+            const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+            const payRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+              headers: { Authorization: `Basic ${auth}` },
+            });
+            if (payRes.ok) {
+              const payment = await payRes.json();
+              let subId = payment?.subscription_id || null;
+              if (!subId && payment?.invoice_id) {
+                const invRes = await fetch(`https://api.razorpay.com/v1/invoices/${payment.invoice_id}`, {
+                  headers: { Authorization: `Basic ${auth}` },
+                });
+                if (invRes.ok) {
+                  const invoice = await invRes.json();
+                  subId = invoice?.subscription_id || null;
+                }
+              }
+              if (subId) {
+                await fetch(`https://api.razorpay.com/v1/subscriptions/${subId}/cancel`, {
+                  method: 'POST',
+                  headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+                }).catch(() => {});
+                const userId = await env.GRANTS.get(`sub:${subId}`);
+                if (userId) {
+                  await env.GRANTS.delete(`sub:${subId}`);
+                  await env.GRANTS.delete(`pending:${subId}`);
+                  let remaining = null;
+                  try {
+                    const raw = await env.GRANTS.get(`subs:${userId}`);
+                    remaining = (raw ? JSON.parse(raw) : []).filter((id) => id !== subId);
+                    await env.GRANTS.put(`subs:${userId}`, JSON.stringify(remaining));
+                  } catch { remaining = null; }
+                  if (remaining !== null && remaining.length === 0) {
+                    await env.GRANTS.delete(`grant:${userId}`);
+                  } else if (remaining !== null && remaining.length > 0) {
+                    await env.GRANTS.put(
+                      `grant:${userId}`,
+                      JSON.stringify({ subscription_id: remaining[0], status: 'active', at: new Date().toISOString() }),
+                    );
+                  }
+                }
+              }
+            }
+          } catch { /* defensive: never revoke on a lookup failure */ }
         }
       }
       // payment.failed: deliberately ignored — Razorpay retries the
       // charge, and the subscription stays active until it is halted,
       // at which point subscription.halted revokes. A refund of one
-      // month's charge is likewise ignored: the subscription governs,
-      // not individual payments.
+      // month's charge is handled above (cancel + revoke), NOT ignored.
       return new Response('ok');
     }
 

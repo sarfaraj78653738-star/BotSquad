@@ -45,32 +45,33 @@ Contact: GitHub Issues (Report & Feedback). This policy may change; the version 
   {
     id: 'subscription',
     title: 'Subscription & Premium Terms',
-    body: `• Remove Ads costs $5, one time. It is NOT a subscription: you pay once, and ads stay removed on this device. Premium removes ads ONLY; it never locks a feature.
-• Payment is processed by Razorpay. Prices include applicable taxes where Razorpay shows them at checkout.
-• If subscriptions are introduced later, they will bill in advance each cycle, renew automatically until cancelled, and show their price and cycle before you subscribe. You may cancel any subscription before its renewal date; access continues until the end of the paid period.
-• Premium is tied to your signed-in Google account on this device. Signing out does not refund a purchase; signing back in restores it.`,
+    body: `• Remove Ads costs ₹199 per month (INR), billed in advance each month. It is a subscription: it renews automatically every month until you cancel. Premium removes ads ONLY; it never locks a feature.
+• Payment is processed by Razorpay (UPI AutoPay or card). The price shown on the purchase screen (₹199/month) is the price charged; prices include applicable taxes where Razorpay shows them at checkout.
+• You may cancel anytime from the purchase screen. Cancellation is IMMEDIATE: ads return at once. No refund for the remaining days of the paid period.
+• Premium is tied to your signed-in Google account. Signing out does not cancel or refund a subscription; signing back in restores it. Cancelling the subscription does not delete your account.`,
   },
   {
     id: 'refund',
     title: 'Refund Policy',
-    body: `• Remove Ads ($5, one time) is refunded in full if you were charged twice for the same purchase, or if the purchase never activated after a successful payment. Contact us via GitHub Issues with your payment ID within 7 days of the charge.
+    body: `• Remove Ads (₹199/month) is refunded in full if you were charged twice for the same subscription period, or if a subscription never activated after a successful payment. Contact us via GitHub Issues with your payment ID within 7 days of the charge.
 • Approved refunds go back to your original payment method through Razorpay, usually within 5-7 business days.
-• We cannot refund a purchase that is working as described. Subscription renewals (if introduced) are not refunded for a partially used period.
+• If a refund is approved for a subscription charge, that subscription is cancelled immediately and premium stops at once — a refund and premium do not continue together. Exception: a refund of a duplicate charge (you were charged twice for the same period) does not cancel your subscription, because your other payment still covers it.
+• We cannot refund a subscription that is working as described, and renewals are not refunded for a partially used period. To stop future charges, cancel — cancellation is immediate and ads return at once.
 • If Razorpay shows a payment as failed, no money is taken and nothing needs refunding.`,
   },
   {
     id: 'cancellation',
     title: 'Cancellation Policy',
-    body: `• One-time Remove Ads ($5) has nothing to cancel: it is permanent on this device. To stop using it, sign out or delete your account.
-• Any future subscription can be cancelled before its renewal date from the purchase screen or your Razorpay receipt; access continues until the end of the paid period, then stops. No partial-period refunds.
-• To cancel your whole account, use Settings > Delete account. It immediately wipes your sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files from this phone. This cannot be undone.
+    body: `• To cancel Remove Ads (₹199/month): open the purchase screen (Settings > Ads & payments) and tap Cancel subscription. Cancellation is IMMEDIATE: ads return at once. No refund for the remaining days.
+• You can also cancel from your Razorpay receipt or your bank/UPI app (revoking the mandate); the subscription then stops and premium is removed.
+• To cancel your whole account, use Settings > Delete account. It immediately wipes your sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files from this phone. This cannot be undone. Deleting your account does not by itself cancel a subscription — cancel the subscription first if you do not want the next charge.
 • Cancelling does not delete data already sent to your chosen AI provider or payment processor; their policies govern that data.`,
   },
   {
     id: 'ads',
     title: 'Ads Policy',
     body: `• This version shows no ads.
-• When ads arrive, they will be clearly marked as ads. Premium ($5, one time) removes them.
+• When ads arrive, they will be clearly marked as ads. Premium (₹199/month) removes them.
 • No personal data is collected for advertising by BotSquad. Any future ad partner's own policy will apply to its ads.`,
   },
   {

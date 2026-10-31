@@ -27,9 +27,9 @@ import {
 // checkout success screen alone never grants it. A buy button that
 // grants premium with no verified payment was deliberately removed
 // on 2026-10-28 and must never return. Standing rule: premium removes
-// ads ONLY. Cancel ends the subscription at the end of the current
-// billing period (premium stays till then, then the cancelled webhook
-// revokes it).
+// ads ONLY. Cancel ends the subscription IMMEDIATELY (user choice
+// 2026-10-31): the cancelled webhook revokes premium at once, no
+// refund for the remaining days.
 // Until the Razorpay key id + Worker URL are filled in (see
 // src/lib/premium.ts), the buy button honestly reports that payments
 // are being set up. This version still shows NO ads.
@@ -90,7 +90,7 @@ export default function AdsPaymentsScreen() {
     setMsg('');
     try {
       await cancelSubscription();
-      setMsg('Subscription cancelled. It ends at the end of your current billing period — ads stay removed until then.');
+      setMsg('Subscription cancelled. Ads are back immediately.');
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Could not cancel the subscription. Try again.');
     } finally {
@@ -166,7 +166,7 @@ export default function AdsPaymentsScreen() {
           <Text style={styles.sub}>• {t(language, 'premiumB')}</Text>
           <Text style={styles.sub}>• {t(language, 'premiumC')}</Text>
           <Text style={styles.price}>Remove Ads — {PREMIUM_PRICE_LABEL}/month</Text>
-          <Text style={styles.sub}>Auto-renews every month (UPI AutoPay or card). Cancel anytime — it ends at the end of your current billing period.</Text>
+          <Text style={styles.sub}>Auto-renews every month (UPI AutoPay or card). Cancel anytime — ads return immediately, no refund for the remaining days.</Text>
           {premium ? (
             <>
               <Text style={styles.sub}>Subscription is active on this device.</Text>

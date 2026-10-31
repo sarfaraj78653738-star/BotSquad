@@ -142,10 +142,9 @@ export async function createSubscription(): Promise<SubscriptionInfo> {
   return { subscriptionId: json.subscriptionId, keyId: json.keyId ?? RAZORPAY_KEY_ID, amount: PREMIUM_PRICE_CENTS, currency: PREMIUM_CURRENCY, alreadyGranted: false };
 }
 
-// Cancels the active subscription AT THE END of the current billing
-// period (cancel_at_cycle_end): premium stays on until the paid month
-// ends, then the subscription.cancelled webhook revokes it. Throws
-// when there is no active subscription or payments are not configured.
+// Cancels the active subscription IMMEDIATELY (cancel_at_cycle_end=0,
+// user choice 2026-10-31): the subscription.cancelled webhook revokes
+// premium at once. No refund for the remaining days.
 export async function cancelSubscription(): Promise<void> {
   if (!PREMIUM_WORKER_URL) {
     throw new Error('Payments are being set up. Try again later.');
