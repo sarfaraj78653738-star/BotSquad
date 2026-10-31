@@ -5,7 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 // Flow: the app opens Google's own login page in the system browser
 // (PKCE, no client secret — this is the Desktop-type OAuth client
 // from Google Cloud Console, which needs no server and no SHA-1).
-// Google redirects back to botsquad://oauth, the app exchanges the
+// Google redirects back to com.botsquad.app:/oauth, the app exchanges the
 // code directly with Google, and the tokens live only in this phone's
 // SecureStore. Google's server is always in the middle — "no server"
 // means no server of OURS.
@@ -14,7 +14,20 @@ import * as SecureStore from 'expo-secure-store';
 // phase. To add the Gmail connector later, extend SCOPES with
 // 'https://www.googleapis.com/auth/gmail.readonly' — the same flow
 // then returns a Gmail-usable access token.
-export const GOOGLE_REDIRECT_URI = 'botsquad://oauth';
+// Google REQUIRES custom redirect schemes to contain a period
+// (reverse-DNS style). The old 'botsquad://oauth' has none, so
+// Google rejected every login with 400 invalid_request, error
+// details naming redirect_uri (proven 2026-10-31). This scheme
+// matches the Android package, so it also reads as the app's own
+// address. Path uses a single slash, per Google's documented form.
+export const GOOGLE_REDIRECT_URI = 'com.botsquad.app:/oauth';
+
+// Bundled default Client ID (Shafy's Desktop OAuth client, created
+// 2026-10-31). A Client ID is a PUBLIC identifier — safe to embed,
+// and it is visible in every login URL anyway. It is used only
+// when no ID is saved in SecureStore; a saved ID always wins, so
+// Shafy's pasted ID keeps working and fresh installs need no setup.
+export const GOOGLE_DEFAULT_CLIENT_ID = '882528237595-62gau3qef0p0hbdpelq8i2tsgc86l3dk.apps.googleusercontent.com';
 
 export const GOOGLE_DISCOVERY = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -31,7 +44,8 @@ const USER_KEY = 'botsquad_google_user';
 const TOKENS_KEY = 'botsquad_google_tokens';
 
 export async function getGoogleClientId(): Promise<string | null> {
-  return SecureStore.getItemAsync(CLIENT_ID_KEY);
+  const stored = await SecureStore.getItemAsync(CLIENT_ID_KEY);
+  return stored ?? GOOGLE_DEFAULT_CLIENT_ID;
 }
 
 export async function setGoogleClientId(clientId: string): Promise<void> {
