@@ -133,7 +133,7 @@ export default {
       if (!res.ok) return json({ error: 'subscription failed' }, 502);
       const sub = await res.json();
       await env.GRANTS.put(`pending:${sub.id}`, userId);
-      return json({ subscriptionId: sub.id, keyId: env.RAZORPAY_KEY_ID });
+      return json({ subscriptionId: sub.id, keyId: env.RAZORPAY_KEY_ID, amount: planAmount, currency: planCurrency });
     }
 
     if (url.pathname === '/cancel-subscription' && request.method === 'POST') {
@@ -205,6 +205,50 @@ export default {
       await env.GRANTS.delete(`grant:${userId}`);
       await env.GRANTS.put(`subs:${userId}`, JSON.stringify([]));
       return json({ granted: false });
+    }
+
+    // Public price lookup (price-change safeguard): the app shows the
+    // live Plan price instead of a hardcoded label, so a dashboard
+    // price change can never leave a stale price on the buy screen.
+    // Fail closed (502) — the app falls back to its hardcoded label.
+    if (url.pathname === '/plan' && request.method === 'GET') {
+      if (!env.RAZORPAY_PLAN_ID) return json({ error: 'plan not configured' }, 500);
+      const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+      const planRes = await fetch(`https://api.razorpay.com/v1/plans/${env.RAZORPAY_PLAN_ID}`, {
+        headers: { Authorization: `Basic ${auth}` },
+      });
+      if (!planRes.ok) return json({ error: 'plan check failed' }, 502);
+      const plan = await planRes.json();
+      const amount = plan?.item?.amount ?? plan?.amount;
+      const currency = plan?.item?.currency ?? plan?.currency;
+      if (typeof amount !== 'number' || !currency) return json({ error: 'plan mismatch' }, 500);
+      return json({ amount, currency, period: plan?.period ?? null, interval: plan?.interval ?? null });
+    }
+
+    // Renewal reminder: returns the active subscription's next renewal
+    // (current_end) for the app's payments screen. Unknown on any
+    // failure — the app hides the date rather than showing a wrong one.
+    if (url.pathname === '/subscription-status' && request.method === 'GET') {
+      const userId = url.searchParams.get('userId');
+      if (!userId) return json({ error: 'userId required' }, 400);
+      const grantRaw = await env.GRANTS.get(`grant:${userId}`);
+      let subscriptionId = null;
+      try { subscriptionId = grantRaw ? JSON.parse(grantRaw).subscription_id || null : null; } catch { subscriptionId = null; }
+      if (!subscriptionId) {
+        try {
+          const raw = await env.GRANTS.get(`subs:${userId}`);
+          const list = raw ? JSON.parse(raw) : [];
+          if (list.length > 0) subscriptionId = list[0];
+        } catch {}
+      }
+      if (!subscriptionId) return json({ status: 'none' });
+      const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+      const res = await fetch(`https://api.razorpay.com/v1/subscriptions/${subscriptionId}`, {
+        headers: { Authorization: `Basic ${auth}` },
+      });
+      if (!res.ok) return json({ unknown: true }, 502);
+      const sub = await res.json();
+      return json({ status: sub?.status ?? 'unknown', currentEnd: sub?.current_end ?? null, chargeAt: sub?.charge_at ?? null });
     }
 
     if (url.pathname === '/webhook' && request.method === 'POST') {

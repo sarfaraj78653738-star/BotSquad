@@ -270,6 +270,7 @@ export default function GroupScreen() {
               <Pressable
                 accessibilityLabel="Export chat as ZIP"
                 accessibilityRole="button"
+                hitSlop={5}
                 onPress={async () => { try { await exportChatZip(selected.title, messages.map((m) => ({ role: m.role, text: m.text }))); } catch { setDialog({ title: 'Export failed', message: 'The ZIP could not be created. Try again.', buttons: [{ text: 'OK' }] }); } }}
                 style={styles.menuButton}
               >
@@ -280,6 +281,7 @@ export default function GroupScreen() {
               <Pressable
                 accessibilityLabel="Group chat menu"
                 accessibilityRole="button"
+                hitSlop={5}
                 onPress={async () => { setMenuPinned((await getPinnedThreads().catch(() => [] as string[])).includes(selected.id)); setMenuOpen(true); }}
                 style={styles.menuButton}
               >

@@ -94,3 +94,8 @@ button honestly reports that payments are being set up.
    dashboard, then Restore in the app → premium must stay off
    (reconcile sees the cancelled status, not just the old grant).
 10. Switch to live keys + a live Plan only after test passes.
+11. Price shown on the buy screen comes from the live Plan (`/plan`):
+    if the Plan price changes (new Plan), the buy screen shows the
+    new price, never a stale label.
+12. Premium users see their renewal date (`/subscription-status`):
+    after subscribing, the payments screen shows "Renews on <date>".

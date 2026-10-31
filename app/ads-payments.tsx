@@ -12,6 +12,8 @@ import {
   cancelSubscription,
   checkGrant,
   createSubscription,
+  getPlanPrice,
+  getSubscriptionStatus,
   isPremium,
   pollGrant,
   reconcileGrant,
@@ -35,6 +37,13 @@ import {
 // Until the Razorpay key id + Worker URL are filled in (see
 // src/lib/premium.ts), the buy button honestly reports that payments
 // are being set up. This version still shows NO ads.
+// DD/MM/YYYY for the renewal date (no locale surprises).
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+}
+
 export default function AdsPaymentsScreen() {
   const tokens = useTokens();
   const [language] = useLanguage();
@@ -44,13 +53,22 @@ export default function AdsPaymentsScreen() {
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [msg, setMsg] = useState('');
+  const [priceLabel, setPriceLabel] = useState(PREMIUM_PRICE_LABEL);
+  const [renewsOn, setRenewsOn] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const owned = await isPremium();
     setPremiumState(owned);
+    let isOwned = owned;
     if (!owned) {
       const granted = await syncPremiumFromGrant();
-      if (granted) setPremiumState(true);
+      if (granted) { setPremiumState(true); isOwned = true; }
+    }
+    getPlanPrice().then((p) => { if (p) setPriceLabel(p.label); }).catch(() => {});
+    if (isOwned) {
+      getSubscriptionStatus().then((s) => { setRenewsOn(s?.renewsOn ?? null); }).catch(() => {});
+    } else {
+      setRenewsOn(null);
     }
   }, []);
 
@@ -87,7 +105,7 @@ export default function AdsPaymentsScreen() {
           key: sub.keyId,
           subscription_id: sub.subscriptionId,
           name: 'BotSquad',
-          description: 'Remove Ads — ₹199/month',
+          description: `Remove Ads — ${priceLabel}/month`,
           prefill: { name: user?.name ?? '', email: user?.email ?? '' },
           theme: { color: '#111111' },
         });
@@ -165,18 +183,19 @@ export default function AdsPaymentsScreen() {
           <Text style={styles.sub}>• {t(language, 'premiumA')}</Text>
           <Text style={styles.sub}>• {t(language, 'premiumB')}</Text>
           <Text style={styles.sub}>• {t(language, 'premiumC')}</Text>
-          <Text style={styles.price}>Remove Ads — {PREMIUM_PRICE_LABEL}/month</Text>
+          <Text style={styles.price}>Remove Ads — {priceLabel}/month</Text>
           <Text style={styles.sub}>Auto-renews every month (UPI AutoPay or card). Cancel anytime — ads return immediately, no refund for the remaining days.</Text>
           {premium ? (
             <>
               <Text style={styles.sub}>Subscription is active on this device.</Text>
+              {renewsOn ? <Text style={styles.sub}>Renews on {fmtDate(renewsOn)}.</Text> : null}
               <Pressable accessibilityLabel="Cancel subscription" onPress={cancel} disabled={busy || verifying} style={[styles.restoreButton, (busy || verifying) && styles.disabled]}>
                 <Text style={styles.restoreText}>Cancel subscription</Text>
               </Pressable>
             </>
           ) : (
             <Pressable accessibilityLabel="Subscribe to Remove Ads" onPress={buy} disabled={busy || verifying} style={[styles.buyButton, (busy || verifying) && styles.disabled]}>
-              <Text style={styles.buyText}>{verifying ? 'Verifying...' : `Subscribe — ${PREMIUM_PRICE_LABEL}/month`}</Text>
+              <Text style={styles.buyText}>{verifying ? 'Verifying...' : `Subscribe — ${priceLabel}/month`}</Text>
             </Pressable>
           )}
           <Pressable accessibilityLabel="Restore subscription" onPress={restore} disabled={busy || verifying} style={[styles.restoreButton, (busy || verifying) && styles.disabled]}>

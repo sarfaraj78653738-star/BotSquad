@@ -135,11 +135,49 @@ export async function createSubscription(): Promise<SubscriptionInfo> {
     body: JSON.stringify({ userId: user.sub }),
   });
   if (!res.ok) throw new Error('Could not start the subscription. Try again.');
-  const json = (await res.json().catch(() => null)) as { alreadyGranted?: boolean; subscriptionId?: string; keyId?: string } | null;
+  const json = (await res.json().catch(() => null)) as { alreadyGranted?: boolean; subscriptionId?: string; keyId?: string; amount?: number; currency?: string } | null;
   if (json?.alreadyGranted) return { subscriptionId: '', keyId: '', amount: 0, currency: '', alreadyGranted: true };
   if (!json?.subscriptionId) throw new Error('Could not start the subscription. Try again.');
   await setPendingSubscription(json.subscriptionId);
-  return { subscriptionId: json.subscriptionId, keyId: json.keyId ?? RAZORPAY_KEY_ID, amount: PREMIUM_PRICE_CENTS, currency: PREMIUM_CURRENCY, alreadyGranted: false };
+  return { subscriptionId: json.subscriptionId, keyId: json.keyId ?? RAZORPAY_KEY_ID, amount: json.amount ?? PREMIUM_PRICE_CENTS, currency: json.currency ?? PREMIUM_CURRENCY, alreadyGranted: false };
+}
+
+// Live Plan price (price-change safeguard): the buy screen shows the
+// dashboard Plan's current price, never a stale hardcoded label.
+// Returns null on any failure — callers fall back to PREMIUM_PRICE_LABEL.
+export async function getPlanPrice(): Promise<{ label: string; cents: number; currency: string } | null> {
+  if (!PREMIUM_WORKER_URL) return null;
+  try {
+    const res = await fetch(`${PREMIUM_WORKER_URL}/plan`);
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as { amount?: number; currency?: string } | null;
+    if (typeof json?.amount !== 'number' || !json.currency) return null;
+    const label = json.currency === 'INR'
+      ? `₹${json.amount % 100 === 0 ? json.amount / 100 : (json.amount / 100).toFixed(2)}`
+      : `${json.currency} ${json.amount / 100}`;
+    return { label, cents: json.amount, currency: json.currency };
+  } catch {
+    return null;
+  }
+}
+
+// Renewal date for the payments screen (premium users). Returns null
+// when unknown — callers hide the date rather than show a wrong one.
+export async function getSubscriptionStatus(): Promise<{ status: string; renewsOn: string | null } | null> {
+  if (!PREMIUM_WORKER_URL) return null;
+  const user = await getGoogleUser().catch(() => null);
+  if (!user) return null;
+  try {
+    const res = await fetch(`${PREMIUM_WORKER_URL}/subscription-status?userId=${encodeURIComponent(user.sub)}`);
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as { status?: string; currentEnd?: number | null; chargeAt?: number | null; unknown?: boolean } | null;
+    if (!json || json.unknown || !json.status) return null;
+    const ts = json.currentEnd ?? json.chargeAt;
+    const renewsOn = typeof ts === 'number' ? new Date(ts * 1000).toISOString() : null;
+    return { status: json.status, renewsOn };
+  } catch {
+    return null;
+  }
 }
 
 // Cancels the active subscription IMMEDIATELY (cancel_at_cycle_end=0,

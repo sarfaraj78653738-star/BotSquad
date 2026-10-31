@@ -282,7 +282,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
 
   function headerIconButton(icon: React.ComponentProps<typeof Feather>['name'], label: string, onPress: () => void) {
     return (
-      <Pressable accessibilityLabel={label} accessibilityRole="button" onPress={onPress} style={styles.headerIconButton}>
+      <Pressable accessibilityLabel={label} accessibilityRole="button" hitSlop={5} onPress={onPress} style={styles.headerIconButton}>
         <Feather name={icon} size={20} color={tokens.text} />
       </Pressable>
     );

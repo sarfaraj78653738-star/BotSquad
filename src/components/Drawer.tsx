@@ -44,7 +44,7 @@ export function MenuButton() {
   const styles = getStyles(tokens);
   const { open } = useDrawer();
   return (
-    <Pressable accessibilityLabel="Open menu" accessibilityRole="button" onPress={open} style={styles.menuButton}>
+    <Pressable accessibilityLabel="Open menu" accessibilityRole="button" hitSlop={5} onPress={open} style={styles.menuButton}>
       <Feather name="menu" size={22} color={tokens.text} />
     </Pressable>
   );
