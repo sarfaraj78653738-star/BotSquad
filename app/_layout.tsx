@@ -1,3 +1,4 @@
+import 'react-native-get-random-values'; // Must stay first: supplies crypto.getRandomValues for the crypto polyfill (see metro.config.js).
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { Linking, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
