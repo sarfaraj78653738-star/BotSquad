@@ -1,5 +1,6 @@
 import { fetchPublicPageText } from './providers';
-import { deleteWorkspaceFile, listWorkspaceFiles, readWorkspaceFile, safeWorkspacePath, writeWorkspaceFile } from './workspace';
+import { deleteWorkspaceFile, listWorkspaceFiles, readWorkspaceFile, safeWorkspacePath, workspaceDir, writeWorkspaceFile } from './workspace';
+import { cloneGitHubRepo, parseGitHubRepo } from './gitDownload';
 import { serviceRequest, vercelDeploy } from './serviceTools';
 import { listMcpServers } from './db';
 import { getMcpToken } from './connections';
@@ -15,8 +16,11 @@ import { requireHttpsUrl } from './mcp';
 // tool block for a real task; a plain question still gets a plain
 // reply, with no tool use at all.
 // Hard limits, stated plainly: the phone cannot run terminal commands,
-// servers, tests, or git, so there is no "run" tool — the agent writes
+// servers, or tests, so there is no "run" tool — the agent writes
 // code, the user previews pages on the phone and exports the rest.
+// One exception (user order 2026-10-31): the agent CAN download a
+// public GitHub repo into the workspace with download_repo, via
+// isomorphic-git (pure JavaScript git — no terminal, no server).
 // File writes, edits, and deletes NEVER run without the user's
 // approval on that exact change (the approval card in chat).
 export type AgentToolCall = { name: string; args: Record<string, unknown> };
@@ -37,7 +41,8 @@ Available tools:
 - service_request {service, method, path, body?}: call a CONNECTED service's own API. service is the service name from [CONNECTED SERVICES] (the prompt lists what is actually connected — never call a service that is not listed). method is GET, POST, PUT, PATCH, or DELETE. path is a relative API path only, like "/user/repos" — never a full URL. body is a JSON string for non-GET calls. GET calls run straight away; any other method runs ONLY after the user approves that exact call in chat. Examples: GitHub list repos GET "/user/repos"; Slack send POST "/chat.postMessage" {"channel":"#general","text":"hi"}; Telegram send POST "/sendMessage" {"chat_id":"123","text":"hi"}; Trello create card POST "/cards" {"name":"Buy milk","idList":"abc"}; Todoist create task POST "/tasks" {"content":"Buy milk"}; WhatsApp send POST "/{phoneId}/messages" {"messaging_product":"whatsapp","to":"919999999999","type":"text","text":{"body":"hi"}} — {phoneId} is filled from the connection, never invent it. You never see any key or token: never ask for one, never print one, never put one in a path or body.
 - vercel_deploy {files, project?}: publish workspace files as a live production site on Vercel (the "make my website live" tool). files is a list of workspace paths, like ["index.html", "style.css"]. Runs ONLY after the user approves the deploy, and only when Vercel is connected. Returns the live URL.
 - mcp_call {server, tool, args}: run one tool of the MCP server called out this turn (see the [MCP SERVER] block in your prompt — never call a server that is not called out). args is a JSON object. Runs ONLY after the user approves that exact call in chat.
-Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export, any live URL). You cannot run commands, servers, tests, or git on this phone — say so plainly if asked, and offer the workspace export instead. For a connected service you do not know the API for, try its standard REST path; if the service returns an error, report it plainly instead of guessing another call.
+- download_repo {repo}: download a PUBLIC GitHub repo into workspace/repos/<owner>-<repo>/ ("owner/name" or a github.com URL; latest files only, single branch). Runs ONLY after the user approves that exact download in chat. Use it when the user asks to download or fetch a GitHub repo.
+Rules: never invent file contents you have not read; paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export, any live URL). You cannot run commands, servers, or tests on this phone — say so plainly if asked. But you CAN download a public GitHub repo with download_repo; offer that when asked to fetch a repo. For a connected service you do not know the API for, try its standard REST path; if the service returns an error, report it plainly instead of guessing another call.
 `;
 
 // Workspace file tools for bot and group chats (user order 2026-10-30):
@@ -46,7 +51,7 @@ Rules: never invent file contents you have not read; paths stay inside the works
 // "whatever Main Chat can do, bot and group can do"). Writes/edits/
 // deletes/deploys still pause at the chat's approval card, and the loop
 // filter is what keeps any other tool out of these chats.
-export const FILE_TOOL_NAMES = ['list_files', 'read_file', 'search_files', 'write_file', 'edit_file', 'delete_file', 'browser_read'];
+export const FILE_TOOL_NAMES = ['list_files', 'read_file', 'search_files', 'write_file', 'edit_file', 'delete_file', 'browser_read', 'download_repo'];
 
 export const BOT_FILE_TOOLS_PROMPT = `
 [WORKSPACE FILE TOOLS — you can also work with files in the phone's workspace, exactly like Main Chat, with the same approval rule. Emit each tool call as its own fenced block:
@@ -61,7 +66,8 @@ export const BOT_FILE_TOOLS_PROMPT = `
 - delete_file {path}: delete a workspace file. Runs ONLY after the user approves it.
 - browser_read {url}: read a PUBLIC web page as text (no logins, paywalls, or CAPTCHAs).
 - vercel_deploy {files, project?}: publish workspace files as a live production site on Vercel. Runs ONLY after the user approves the deploy, and only when Vercel is connected. Returns the live URL.
-Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, tests, or git on this phone; say so plainly if asked.]`;
+- download_repo {repo}: download a PUBLIC GitHub repo into workspace/repos/<owner>-<repo>/ ("owner/name" or a github.com URL; latest files only, single branch). Runs ONLY after the user approves that exact download in chat.
+Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, or tests on this phone, but you CAN download a public GitHub repo with download_repo; say so plainly if asked.]`;
 
 export function parseToolCalls(reply: string): AgentToolCall[] {
   const calls: AgentToolCall[] = [];
@@ -239,7 +245,22 @@ export async function executeAgentTool(
         return `Error: could not reach MCP server ${server.name} (network issue).`;
       }
     }
+    case 'download_repo': {
+      const parsed = parseGitHubRepo(argString(call.args, 'repo'));
+      if (!parsed) return 'Error: download_repo needs a GitHub repo ("owner/name" or a github.com URL). Public repos only.';
+      const rel = sectionPath(`repos/${parsed.owner}-${parsed.name}`);
+      if (!rel) return 'Error: invalid path.';
+      const ok = await approve(`Download repo ${parsed.owner}/${parsed.name}`, `Clones the public repo into ${rel} (latest files only, single branch).`);
+      if (!ok) return 'Rejected by user.';
+      try {
+        const dir = await workspaceDir();
+        const stats = await cloneGitHubRepo(`${dir}${rel}`, parsed.url);
+        return `Downloaded ${parsed.owner}/${parsed.name} into ${rel} (${stats.files} files, ${stats.bytes} bytes). Sample: ${stats.sample.join(', ') || '(empty)'}.`;
+      } catch (e) {
+        return `Error: could not download ${parsed.owner}/${parsed.name} (${e instanceof Error ? e.message : 'download failed'}). The repo may not exist, be private, or be too large for this phone.`;
+      }
+    }
     default:
-      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read, service_request, vercel_deploy, mcp_call.`;
+      return `Error: unknown tool "${call.name}". Available: list_files, read_file, search_files, write_file, edit_file, delete_file, browser_read, download_repo, service_request, vercel_deploy, mcp_call.`;
   }
 }
