@@ -274,8 +274,12 @@ jobs:
           fi
           ACTUAL=$("$APKSIGNER" verify --print-certs android/app/build/outputs/apk/release/app-release.apk 2>/dev/null | grep 'certificate SHA-1 digest' | awk '{print $NF}' | tr 'a-f' 'A-F')
           EXPECTED="B8:24:49:51:32:71:66:65:28:50:85:B2:93:E8:E8:C6:5B:6A:89:A5"
+          # apksigner prints the digest WITHOUT colons, so strip them
+          # from EXPECTED before comparing (comparing colon-less
+          # ACTUAL against coloned EXPECTED always failed).
+          EXPECTED_NOCOLON=$(echo "$EXPECTED" | tr -d ':')
           echo "APK signing SHA1: $ACTUAL"
-          if [ "$ACTUAL" != "$EXPECTED" ]; then
+          if [ "$ACTUAL" != "$EXPECTED_NOCOLON" ]; then
             echo "ERROR: APK is not signed with the release keystore"
             exit 1
           fi
