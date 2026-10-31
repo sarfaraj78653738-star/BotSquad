@@ -8,14 +8,25 @@
 import { getSetting, setSetting } from './db';
 
 export const TERMS_VERSION = '2026-10-31';
-const KEY = 'terms_age_agreed';
+// Device-global legacy key (pre-fix): nothing reads it anymore.
+// Keyed records live under terms_age_agreed_<sub> (fix 2026-11-01 —
+// the global record let a second account skip the gate entirely).
+const LEGACY_KEY = 'terms_age_agreed';
+function keyFor(sub: string): string {
+  return `terms_age_agreed_${sub}`;
+}
 
 export type Agreement = { version: string; agreedAt: string; ageVerifiedAt: string };
 
-export async function getAgreement(): Promise<Agreement | null> {
+export async function getAgreement(sub: string): Promise<Agreement | null> {
   try {
-    const raw = await getSetting(KEY);
-    if (!raw) return null;
+    const raw = await getSetting(keyFor(sub));
+    if (!raw) {
+      // One-time cleanup: the legacy record is dead (nothing reads
+      // it) — clear it so it can't linger as a stale "agreed" row.
+      await setSetting(LEGACY_KEY, '').catch(() => {});
+      return null;
+    }
     const parsed = JSON.parse(raw) as Agreement;
     if (parsed.version !== TERMS_VERSION || !parsed.agreedAt || !parsed.ageVerifiedAt) return null;
     return parsed;
@@ -24,9 +35,9 @@ export async function getAgreement(): Promise<Agreement | null> {
   }
 }
 
-export async function setAgreement(): Promise<void> {
+export async function setAgreement(sub: string): Promise<void> {
   const now = new Date().toISOString();
-  await setSetting(KEY, JSON.stringify({ version: TERMS_VERSION, agreedAt: now, ageVerifiedAt: now }));
+  await setSetting(keyFor(sub), JSON.stringify({ version: TERMS_VERSION, agreedAt: now, ageVerifiedAt: now }));
 }
 
 // Parses DD/MM/YYYY (slashes or dashes) and returns the age in years,

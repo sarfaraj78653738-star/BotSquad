@@ -5,6 +5,19 @@
 //   RAZORPAY_PLAN_ID (the dashboard Plan id — see below).
 // KV binding: GRANTS (see wrangler.toml).
 //
+// CALLER AUTH (fix 2026-11-01 — endpoints previously took no auth at
+// all, so any caller could pass any userId): the app sends its stored
+// Google ID token as `Authorization: Bearer <idToken>` on every
+// user-scoped call. The Worker verifies it before acting — RS256
+// signature against Google's JWKS, issuer, audience (the app's
+// Android OAuth client id, a PUBLIC identifier), expiry, and token
+// sub === requested userId — and rate-limits per userId + endpoint.
+// The webhook path is unchanged (HMAC only, no Bearer token).
+// NOTE: the current sign-in config does not request an ID token
+// (GoogleSignin.configure has no webClientId), so a stored token may
+// be null until sign-in is configured to request one; the app fails
+// closed (no token = no Worker call) in that case.
+//
 // MONTHLY SUBSCRIPTION (user order 2026-10-31, replaces the old
 // one-time $5 model): ₹199/month, INR. The price lives in the
 // Razorpay dashboard Plan, NOT here — create a Plan (₹199, monthly,
@@ -55,6 +68,140 @@ function json(data, status = 200) {
   });
 }
 
+// --- Google ID-token verification (Web Crypto, no dependencies) ---
+// Values verified against Google's official verification docs +
+// a working Web Crypto reference implementation (2026-11-01):
+// JWKS (JWK format) at oauth2/v3/certs; issuers exactly
+// 'accounts.google.com' or 'https://accounts.google.com'; audience
+// exact-matches our client id; exp must be in the future; algorithm
+// pinned to RS256 (never taken from the token header); key selected
+// by header kid, with one JWKS refetch on an unknown kid (rotation).
+const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
+const GOOGLE_ISSUERS = ['accounts.google.com', 'https://accounts.google.com'];
+const GOOGLE_AUDIENCE = '882528237595-uppqaeumchghusblf8akl6pu2oo4htjp.apps.googleusercontent.com';
+
+function base64urlDecode(s) {
+  let t = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (t.length % 4) t += '=';
+  const bin = atob(t);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+let jwksCache = null; // { keys, at, maxAge }
+async function fetchJwks() {
+  try {
+    const res = await fetch(GOOGLE_JWKS_URL);
+    if (!res.ok) return null;
+    const cc = res.headers.get('Cache-Control') || '';
+    const m = cc.match(/max-age=(\d+)/);
+    // Honour Cache-Control when present; the fallback is a local
+    // default, NOT a Google-documented TTL (Google documents none).
+    const maxAge = m ? parseInt(m[1], 10) * 1000 : 3600 * 1000;
+    const data = await res.json().catch(() => null);
+    if (!data || !Array.isArray(data.keys)) return null;
+    jwksCache = { keys: data.keys, at: Date.now(), maxAge };
+    return jwksCache;
+  } catch {
+    return null;
+  }
+}
+async function getJwks() {
+  if (jwksCache && Date.now() - jwksCache.at < jwksCache.maxAge) return jwksCache;
+  return (await fetchJwks()) || jwksCache; // stale cache beats no cache
+}
+
+// Returns the token's sub on success, null on ANY failure (bad shape,
+// wrong alg/kid, wrong iss/aud, expired, bad signature, JWKS down).
+// Never throws, never leaks a reason — callers answer 401.
+async function verifyGoogleIdToken(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const header = JSON.parse(new TextDecoder().decode(base64urlDecode(parts[0])));
+    const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(parts[1])));
+    if (header.alg !== 'RS256' || !header.kid) return null;
+    if (!GOOGLE_ISSUERS.includes(payload.iss)) return null;
+    if (payload.aud !== GOOGLE_AUDIENCE) return null;
+    if (typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now()) return null;
+    if (typeof payload.sub !== 'string' || !payload.sub) return null;
+    let jwks = await getJwks();
+    let jwk = jwks?.keys.find((k) => k.kid === header.kid);
+    if (!jwk) {
+      jwks = await fetchJwks(); // rotation: refetch once before rejecting
+      jwk = jwks?.keys.find((k) => k.kid === header.kid);
+      if (!jwk) return null;
+    }
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const ok = await crypto.subtle.verify(
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      key,
+      base64urlDecode(parts[2]),
+      new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+    );
+    return ok ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+// Returns the verified token sub, or null. When expectedUserId is
+// given, the token must belong to that user — no cross-user calls.
+async function authedSub(request, expectedUserId) {
+  const auth = request.headers.get('Authorization') || '';
+  const m = auth.match(/^Bearer\s+(.+)$/);
+  if (!m) return null;
+  const sub = await verifyGoogleIdToken(m[1]);
+  if (!sub) return null;
+  if (expectedUserId !== undefined && sub !== expectedUserId) return null;
+  return sub;
+}
+
+// Per-userId, per-endpoint fixed-window rate limit (in-memory,
+// per-isolate). Auth already kills anonymous spam; this bounds
+// authenticated abuse. Strict global limiting would need Durable
+// Objects — noted, not built (pre-launch scale).
+const rateBuckets = new Map();
+function rateOk(callerSub, endpoint) {
+  const now = Date.now();
+  for (const [k, v] of rateBuckets) if (now - v.start > 60000) rateBuckets.delete(k);
+  const key = `${sub}:${endpoint}`;
+  const b = rateBuckets.get(key) || { start: now, count: 0 };
+  if (now - b.start > 60000) { b.start = now; b.count = 0; }
+  b.count += 1;
+  rateBuckets.set(key, b);
+  return b.count <= 30;
+}
+
+// Plan fetch with a Worker-side cache (Plans are immutable, so a
+// cached Plan is still correct). On fetch failure the cached Plan
+// (even stale) is used, so one Razorpay blip does not 502 every buy;
+// null only when no Plan was ever fetched successfully.
+let planCache = null; // { at, plan }
+async function getPlanCached(env) {
+  const now = Date.now();
+  if (planCache && now - planCache.at < 5 * 60 * 1000) return planCache.plan;
+  try {
+    const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+    const planRes = await fetch(`https://api.razorpay.com/v1/plans/${env.RAZORPAY_PLAN_ID}`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    if (!planRes.ok) return planCache ? planCache.plan : null;
+    const plan = await planRes.json();
+    planCache = { at: now, plan };
+    return plan;
+  } catch {
+    return planCache ? planCache.plan : null;
+  }
+}
+
 // Constant-time HMAC-SHA256 comparison (Web Crypto has no
 // timingSafeEqual; a plain === leaks timing on the signature).
 async function signatureOk(secret, body, signature) {
@@ -86,7 +233,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         },
       });
     }
@@ -94,6 +241,9 @@ export default {
     if (url.pathname === '/grant' && request.method === 'GET') {
       const userId = url.searchParams.get('userId');
       if (!userId) return json({ granted: false }, 400);
+      const callerSub = await authedSub(request, userId);
+      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!rateOk(callerSub, 'grant')) return json({ error: 'rate limited' }, 429);
       const grant = await env.GRANTS.get(`grant:${userId}`);
       return json({ granted: !!grant });
     }
@@ -101,6 +251,9 @@ export default {
     if (url.pathname === '/create-subscription' && request.method === 'POST') {
       const { userId } = await request.json().catch(() => ({}));
       if (!userId) return json({ error: 'userId required' }, 400);
+      const callerSub = await authedSub(request, userId);
+      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!rateOk(callerSub, 'create-subscription')) return json({ error: 'rate limited' }, 429);
       if (!env.RAZORPAY_PLAN_ID) return json({ error: 'plan not configured' }, 500);
       const existing = await env.GRANTS.get(`grant:${userId}`);
       if (existing) return json({ alreadyGranted: true });
@@ -109,11 +262,8 @@ export default {
       // overcharge a user. Verify amount + currency strictly, and
       // period/interval when the Plan reports them. (Retrieved Plans
       // nest amount/currency under item; fall back to top level.)
-      const planRes = await fetch(`https://api.razorpay.com/v1/plans/${env.RAZORPAY_PLAN_ID}`, {
-        headers: { Authorization: `Basic ${auth}` },
-      });
-      if (!planRes.ok) return json({ error: 'plan check failed' }, 502);
-      const plan = await planRes.json();
+      const plan = await getPlanCached(env);
+      if (!plan) return json({ error: 'plan check failed' }, 502);
       const planAmount = plan?.item?.amount ?? plan?.amount;
       const planCurrency = plan?.item?.currency ?? plan?.currency;
       if (planAmount !== 19900 || planCurrency !== 'INR') return json({ error: 'plan mismatch' }, 500);
@@ -139,6 +289,9 @@ export default {
     if (url.pathname === '/cancel-subscription' && request.method === 'POST') {
       const { userId } = await request.json().catch(() => ({}));
       if (!userId) return json({ error: 'userId required' }, 400);
+      const callerSub = await authedSub(request, userId);
+      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!rateOk(callerSub, 'cancel-subscription')) return json({ error: 'rate limited' }, 429);
       const grantRaw = await env.GRANTS.get(`grant:${userId}`);
       if (!grantRaw) return json({ nothingToCancel: true });
       let subscriptionId = null;
@@ -163,6 +316,9 @@ export default {
       // every checked subscription is positively non-active.
       const { userId, pendingSubscriptionId } = await request.json().catch(() => ({}));
       if (!userId) return json({ error: 'userId required' }, 400);
+      const callerSub = await authedSub(request, userId);
+      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!rateOk(callerSub, 'reconcile')) return json({ error: 'rate limited' }, 429);
       const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
       const candidates = [];
       const grantRaw = await env.GRANTS.get(`grant:${userId}`);
@@ -174,7 +330,13 @@ export default {
         const list = raw ? JSON.parse(raw) : [];
         for (const id of list) if (!candidates.includes(id)) candidates.push(id);
       } catch {}
-      if (pendingSubscriptionId && !candidates.includes(pendingSubscriptionId)) candidates.push(pendingSubscriptionId);
+      // A caller-supplied pending id counts ONLY if the KV mapping
+      // proves it belongs to this user — otherwise anyone could grant
+      // themselves premium from someone else's paid subscription id.
+      if (pendingSubscriptionId && !candidates.includes(pendingSubscriptionId)) {
+        const owner = (await env.GRANTS.get(`pending:${pendingSubscriptionId}`)) || (await env.GRANTS.get(`sub:${pendingSubscriptionId}`));
+        if (owner === userId) candidates.push(pendingSubscriptionId);
+      }
       if (candidates.length === 0) {
         return json(grantRaw ? { unknown: true } : { granted: false });
       }
@@ -212,13 +374,12 @@ export default {
     // price change can never leave a stale price on the buy screen.
     // Fail closed (502) — the app falls back to its hardcoded label.
     if (url.pathname === '/plan' && request.method === 'GET') {
+      const callerSub = await authedSub(request);
+      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!rateOk(callerSub, 'plan')) return json({ error: 'rate limited' }, 429);
       if (!env.RAZORPAY_PLAN_ID) return json({ error: 'plan not configured' }, 500);
-      const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
-      const planRes = await fetch(`https://api.razorpay.com/v1/plans/${env.RAZORPAY_PLAN_ID}`, {
-        headers: { Authorization: `Basic ${auth}` },
-      });
-      if (!planRes.ok) return json({ error: 'plan check failed' }, 502);
-      const plan = await planRes.json();
+      const plan = await getPlanCached(env);
+      if (!plan) return json({ error: 'plan check failed' }, 502);
       const amount = plan?.item?.amount ?? plan?.amount;
       const currency = plan?.item?.currency ?? plan?.currency;
       if (typeof amount !== 'number' || !currency) return json({ error: 'plan mismatch' }, 500);
@@ -231,6 +392,9 @@ export default {
     if (url.pathname === '/subscription-status' && request.method === 'GET') {
       const userId = url.searchParams.get('userId');
       if (!userId) return json({ error: 'userId required' }, 400);
+      const callerSub = await authedSub(request, userId);
+      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!rateOk(callerSub, 'subscription-status')) return json({ error: 'rate limited' }, 429);
       const grantRaw = await env.GRANTS.get(`grant:${userId}`);
       let subscriptionId = null;
       try { subscriptionId = grantRaw ? JSON.parse(grantRaw).subscription_id || null : null; } catch { subscriptionId = null; }

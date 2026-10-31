@@ -99,3 +99,7 @@ button honestly reports that payments are being set up.
     new price, never a stale label.
 12. Premium users see their renewal date (`/subscription-status`):
     after subscribing, the payments screen shows "Renews on <date>".
+
+## Authentication (2026-11-01 audit fix)
+
+All user-scoped endpoints (/grant, /create-subscription, /cancel-subscription, /reconcile, /subscription-status, /plan) now require `Authorization: Bearer <Google idToken>`. The Worker verifies the token (RS256 via Google JWKS, issuer, audience = the server client ID — currently the Android OAuth client ID; change it if a different server client is chosen — expiry) and requires the token sub to equal the requested userId (except /plan, which requires only a valid token). Missing/invalid token returns 401. Per-userId rate limit: 30 requests/60s per endpoint (429 on exceed). The Plan fetch is cached 5 minutes (a stale Plan is still correct — Plans are immutable); it only 502s when no Plan was ever fetched. The app sends the token from its stored Google session; if the app has no ID token (sign-in not configured to request one), calls fail closed (polling returns unknown, create/cancel throw 'Sign in again.').

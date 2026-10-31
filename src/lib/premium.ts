@@ -20,6 +20,11 @@
 //   passes its Google user id; the Worker uses the dashboard Plan
 //   (₹199/month, INR — create it in the Razorpay dashboard, store its
 //   id as the Worker's RAZORPAY_PLAN_ID env).
+// • Every Worker call carries the stored Google ID token as a Bearer
+//   token (fix 2026-11-01 — the Worker previously took no auth, so
+//   any caller could pass any userId). The Worker verifies the token
+//   (RS256/JWKS, issuer, audience, expiry, sub match) and rate-limits
+//   per userId before acting; a call without a token fails closed.
 // • Double-subscription guards, three layers:
 //   1. Buy is blocked when a subscription is already active.
 //   2. An unauthorised subscription is reused (pending subscription
@@ -30,7 +35,7 @@
 // buy button honestly reports that payments are being set up, and
 // premium can never be granted — there is no client-side grant path.
 import { getSetting, setSetting } from './db';
-import { getGoogleUser } from './googleAuth';
+import { getGoogleIdToken, getGoogleUser } from './googleAuth';
 
 // Display price. In paise for INR (the dashboard Plan, not this
 // number, fixes the actual charge).
@@ -42,6 +47,16 @@ export const PREMIUM_WORKER_URL = '';
 
 const PREMIUM_KEY = 'premium_ads_removed';
 const PENDING_SUBSCRIPTION_KEY = 'premium_pending_subscription';
+
+// Authorization for Worker calls: the stored Google ID token as a
+// Bearer token. The Worker verifies it (RS256/JWKS, issuer, audience,
+// expiry, sub match) before acting. Returns null when no token is
+// stored — callers fail closed (unknown/null/error) rather than
+// sending an unauthenticated request the Worker would reject anyway.
+async function authHeader(): Promise<Record<string, string> | null> {
+  const token = await getGoogleIdToken().catch(() => null);
+  return token ? { Authorization: `Bearer ${token}` } : null;
+}
 
 export async function isPremium(): Promise<boolean> {
   try {
@@ -85,8 +100,10 @@ export async function checkGrantStatus(): Promise<GrantStatus> {
   if (!PREMIUM_WORKER_URL) return 'unknown';
   const user = await getGoogleUser().catch(() => null);
   if (!user) return 'unknown';
+  const headers = await authHeader();
+  if (!headers) return 'unknown';
   try {
-    const res = await fetch(`${PREMIUM_WORKER_URL}/grant?userId=${encodeURIComponent(user.sub)}`);
+    const res = await fetch(`${PREMIUM_WORKER_URL}/grant?userId=${encodeURIComponent(user.sub)}`, { headers });
     if (!res.ok) return 'unknown';
     const json = (await res.json().catch(() => null)) as { granted?: boolean } | null;
     return json?.granted === true ? 'granted' : 'not-granted';
@@ -125,13 +142,15 @@ export async function createSubscription(): Promise<SubscriptionInfo> {
   }
   const user = await getGoogleUser().catch(() => null);
   if (!user) throw new Error('Sign in first.');
+  const headers = await authHeader();
+  if (!headers) throw new Error('Sign in again.');
   const pending = await getPendingSubscription();
   if (pending) {
     return { subscriptionId: pending, keyId: RAZORPAY_KEY_ID, amount: PREMIUM_PRICE_CENTS, currency: PREMIUM_CURRENCY, alreadyGranted: false };
   }
   const res = await fetch(`${PREMIUM_WORKER_URL}/create-subscription`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ userId: user.sub }),
   });
   if (!res.ok) throw new Error('Could not start the subscription. Try again.');
@@ -147,8 +166,12 @@ export async function createSubscription(): Promise<SubscriptionInfo> {
 // Returns null on any failure — callers fall back to PREMIUM_PRICE_LABEL.
 export async function getPlanPrice(): Promise<{ label: string; cents: number; currency: string } | null> {
   if (!PREMIUM_WORKER_URL) return null;
+  const user = await getGoogleUser().catch(() => null);
+  if (!user) return null;
+  const headers = await authHeader();
+  if (!headers) return null;
   try {
-    const res = await fetch(`${PREMIUM_WORKER_URL}/plan`);
+    const res = await fetch(`${PREMIUM_WORKER_URL}/plan`, { headers });
     if (!res.ok) return null;
     const json = (await res.json().catch(() => null)) as { amount?: number; currency?: string } | null;
     if (typeof json?.amount !== 'number' || !json.currency) return null;
@@ -167,8 +190,10 @@ export async function getSubscriptionStatus(): Promise<{ status: string; renewsO
   if (!PREMIUM_WORKER_URL) return null;
   const user = await getGoogleUser().catch(() => null);
   if (!user) return null;
+  const headers = await authHeader();
+  if (!headers) return null;
   try {
-    const res = await fetch(`${PREMIUM_WORKER_URL}/subscription-status?userId=${encodeURIComponent(user.sub)}`);
+    const res = await fetch(`${PREMIUM_WORKER_URL}/subscription-status?userId=${encodeURIComponent(user.sub)}`, { headers });
     if (!res.ok) return null;
     const json = (await res.json().catch(() => null)) as { status?: string; currentEnd?: number | null; chargeAt?: number | null; unknown?: boolean } | null;
     if (!json || json.unknown || !json.status) return null;
@@ -189,9 +214,11 @@ export async function cancelSubscription(): Promise<void> {
   }
   const user = await getGoogleUser().catch(() => null);
   if (!user) throw new Error('Sign in first.');
+  const headers = await authHeader();
+  if (!headers) throw new Error('Sign in again.');
   const res = await fetch(`${PREMIUM_WORKER_URL}/cancel-subscription`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ userId: user.sub }),
   });
   if (!res.ok) throw new Error('Could not cancel the subscription. Try again.');
@@ -209,11 +236,13 @@ export async function reconcileGrant(): Promise<boolean> {
   if (!PREMIUM_WORKER_URL) return syncPremiumFromGrant();
   const user = await getGoogleUser().catch(() => null);
   if (!user) return syncPremiumFromGrant();
+  const headers = await authHeader();
+  if (!headers) return syncPremiumFromGrant();
   try {
     const pending = await getPendingSubscription();
     const res = await fetch(`${PREMIUM_WORKER_URL}/reconcile`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ userId: user.sub, pendingSubscriptionId: pending }),
     });
     if (!res.ok) return syncPremiumFromGrant();

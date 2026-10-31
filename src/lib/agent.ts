@@ -127,12 +127,15 @@ async function detectPluginEntry(dir: string): Promise<{ kind: 'code' | 'skill' 
   return { kind: 'none' };
 }
 
-// approve() shows the user the exact change and resolves true only
-// when they tap Approve. Read-only tools never call it.
+// approve() shows the user the FULL change (fix 2026-11-01 —
+// previews were truncated at 800/400 chars but the full content was
+// executed, so content past the cut was never reviewed). The chat
+// cards render the full preview in a scrollable view, so nothing
+// approved is ever hidden. Read-only tools never call it.
 export async function executeAgentTool(
   call: AgentToolCall,
   approve: (summary: string, preview: string) => Promise<boolean>,
-  opts?: { section?: string },
+  opts?: { section?: string; signal?: AbortSignal },
 ): Promise<string> {
   // Section scoping (user order 2026-10-30): bot chats work under
   // "bots/<botId>/", group chats under "groups/<threadId>/", Main Chat
@@ -186,7 +189,7 @@ export async function executeAgentTool(
       const content = argString(call.args, 'content');
       if (!p) return 'Error: invalid path.';
       if (!content) return 'Error: write_file needs content.';
-      const ok = await approve(`Write ${p}`, content.slice(0, 800));
+      const ok = await approve(`Write ${p}`, content);
       if (!ok) return 'Rejected by user.';
       await writeWorkspaceFile(p, content);
       return `Wrote ${p} (${content.length} chars).`;
@@ -200,7 +203,7 @@ export async function executeAgentTool(
       try { current = await readWorkspaceFile(p); }
       catch { return 'Error: could not read that file.'; }
       if (!current.includes(oldText)) return 'Error: old_text was not found in the file — read it first and use its exact text.';
-      const ok = await approve(`Edit ${p}`, `Replace:\n${oldText.slice(0, 400)}\nWith:\n${newText.slice(0, 400)}`);
+      const ok = await approve(`Edit ${p}`, `Replace:\n${oldText}\nWith:\n${newText}`);
       if (!ok) return 'Rejected by user.';
       await writeWorkspaceFile(p, current.replace(oldText, newText));
       return `Edited ${p}.`;
@@ -217,7 +220,7 @@ export async function executeAgentTool(
       const url = argString(call.args, 'url');
       if (!/^https:\/\/[^\/\s]+/.test(url)) return 'Error: browser_read needs a full https:// URL.';
       try {
-        const page = await fetchPublicPageText(url);
+        const page = await fetchPublicPageText(url, { signal: opts?.signal });
         return `Title: ${page.title}\n${page.text.slice(0, 8000)}`;
       } catch {
         return 'Error: could not read that page (public pages only; no login, paywall, or CAPTCHA).';
@@ -234,7 +237,7 @@ export async function executeAgentTool(
       // changes data on a service pauses for the user's approval,
       // exactly like file writes.
       if (method.toUpperCase() !== 'GET') {
-        const ok = await approve(`Send to ${service}: ${method.toUpperCase()} ${path}`, (body ?? '').slice(0, 800) || 'No body.');
+        const ok = await approve(`Send to ${service}: ${method.toUpperCase()} ${path}`, (body ?? '') || 'No body.');
         if (!ok) return 'Rejected by user.';
       }
       return serviceRequest(service, method, path, body);
@@ -261,7 +264,7 @@ export async function executeAgentTool(
       const servers = await listMcpServers();
       const server = servers.find((s) => s.name.toLowerCase() === serverName.toLowerCase());
       if (!server) return `Error: no saved MCP server named "${serverName}".`;
-      const ok = await approve(`MCP call ${server.name} → ${toolName}`, JSON.stringify(argsObj).slice(0, 800) || 'No arguments.');
+      const ok = await approve(`MCP call ${server.name} → ${toolName}`, JSON.stringify(argsObj) || 'No arguments.');
       if (!ok) return 'Rejected by user.';
       try {
         requireHttpsUrl(server.url, 'MCP server URL');
@@ -366,7 +369,7 @@ export async function executeAgentTool(
         catch { return 'Error: could not read that file (it may not exist).'; }
         label = p;
       }
-      const okRun = await approve(`Run plugin ${label}`, 'Runs this JavaScript on the phone in the WebView sandbox (no host, no server). It can only use the bridged workspace file + public-page actions; it cannot touch app data or keys.');
+      const okRun = await approve(`Run plugin ${label}`, `Runs this JavaScript on the phone in the WebView sandbox (no host, no server, no network access). It can only use the bridged workspace file + public-page actions; it cannot touch app data or keys. ${section ? `It can only read files under ${section}/.` : 'Main Chat: it can read files in all workspace sections.'}`);
       if (!okRun) return 'Rejected by user.';
       const res = await runPluginCode({ code, section, approve });
       const logPart = res.logs.length ? `\nPlugin log:\n${res.logs.join('\n')}` : '';

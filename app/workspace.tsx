@@ -85,7 +85,11 @@ export default function WorkspaceScreen() {
           // pages, but file access is OFF — previewed page code
           // cannot read other local files, and this WebView has no
           // bridge to app data or keys (unlike the plugin sandbox).
-          <WebView source={{ uri: preview.uri }} javaScriptEnabled allowFileAccess={false} originWhitelist={['*']} style={{ flex: 1 }} />
+          // Navigation guard (fix 2026-11-01): only the preview
+          // file's own URI may load — a redirect to any other page
+          // (e.g. a fake login) is blocked, so the header can never
+          // label attacker content with the user's file name.
+          <WebView source={{ uri: preview.uri }} javaScriptEnabled allowFileAccess={false} originWhitelist={['*']} onShouldStartLoadWithRequest={(request) => request.url === preview.uri} style={{ flex: 1 }} />
         ) : (
           <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
             <Text style={styles.previewText}>{preview.text}</Text>

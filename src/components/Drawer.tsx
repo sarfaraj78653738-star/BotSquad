@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { newId } from '../lib/types';
+import { requestFreshChat } from '../lib/newChatFlag';
 import { useLanguage, useTokens } from '../lib/tokens';
 import { t } from '../lib/i18n';
 
@@ -124,7 +125,15 @@ function DrawerMenu({ onClose }: { onClose: () => void }) {
             // form, everywhere else a fresh Main Chat thread. It used
             // to always open Main Chat, even from Bots or Group.
             if (pathname === '/group') router.replace('/group' as never);
-            else if (pathname === '/bots' || pathname.startsWith('/chat/')) router.replace({ pathname: '/bots', params: { fresh: '1' } } as never);
+            else if (pathname === '/bots' || pathname.startsWith('/chat/')) {
+              // In-memory fresh flag (fix 2026-11-01): the ?fresh=1
+              // navigation below is kept for the Bots screen's
+              // freshMode note, but the thread itself is only created
+              // from this flag — a fresh=1 deep link from outside the
+              // app must not spawn a row with no user tap.
+              requestFreshChat();
+              router.replace({ pathname: '/bots', params: { fresh: '1' } } as never);
+            }
             else router.replace({ pathname: '/', params: { chatId: `universal-${newId()}` } } as never);
           }}
           style={styles.newChatButton}

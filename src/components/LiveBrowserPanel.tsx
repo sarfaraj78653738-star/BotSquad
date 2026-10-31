@@ -77,7 +77,12 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
       case 'reload': return t(language, 'describeReload');
       case 'scroll': return `${t(language, 'describeScrolled')} ${a.direction === 'down' ? t(language, 'scrollDown') : t(language, 'scrollUp')}`;
       case 'tap': return `${t(language, 'describeTapped')} "${a.text}"`;
-      case 'type': return `${t(language, 'describeTyped')} "${a.field}"`;
+      // The approval shows exactly what will be typed (fix 2026-11-01
+      // — the card previously showed only the field name, so
+      // model-held sensitive text could be typed into an attacker
+      // page's field unseen): value truncated to ~200 chars plus its
+      // total length, so a long value is never silently hidden.
+      case 'type': return `${t(language, 'describeTyped')} "${a.field}": "${a.value.slice(0, 200)}${a.value.length > 200 ? '…' : ''}" (${a.value.length} chars)`;
     }
   }
 
@@ -170,6 +175,15 @@ const LiveBrowserPanel = forwardRef<LiveBrowserHandle, Props>(function LiveBrows
             return hay.indexOf(needle) !== -1;
           });
           if (!hit) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'bot-result', ok: false })); return true; }
+          // Second sensitive check (fix 2026-11-01): the model-supplied
+          // field name is not the only signal — the matched DOM
+          // element's OWN name/id/aria-label/placeholder/type are
+          // tested against the sensitive pattern too, and any hit
+          // refuses the match (a text-type OTP field the model calls
+          // "code" must not slip through on the name alone).
+          var sens = /pass|pwd|otp|pin|secret|credential/i;
+          var attrs = ((hit.getAttribute('aria-label') || '') + ' ' + (hit.placeholder || '') + ' ' + (hit.name || '') + ' ' + (hit.id || '') + ' ' + (hit.type || '')).toLowerCase();
+          if (sens.test(attrs)) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'bot-result', ok: false })); return true; }
           var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
           if (setter && setter.set) setter.set.call(hit, '${value}'); else hit.value = '${value}';
           hit.dispatchEvent(new Event('input', { bubbles: true }));

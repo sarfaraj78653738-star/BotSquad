@@ -135,7 +135,10 @@ export async function runGroupMessage(
           const calls = parseToolCalls(reply).filter((c) => FILE_TOOL_NAMES.includes(c.name) || c.name === 'vercel_deploy' || c.name === 'mcp_call' || c.name === 'service_request');
           if (calls.length === 0) break;
           const results: string[] = [];
-          for (const call of calls) {
+          // Per-step cap, same as Main Chat (fix 2026-11-01): only
+          // the first 10 calls run; excess blocks get an error
+          // result and never execute.
+          for (const call of calls.slice(0, 10)) {
             const argStr = (k: string) => typeof call.args[k] === 'string' ? call.args[k] as string : '';
             let result: string;
             if (FILE_TOOL_NAMES.includes(call.name) || call.name === 'vercel_deploy') {
@@ -143,14 +146,14 @@ export async function runGroupMessage(
               // path as Main Chat (writes/edits/deletes/deploys pause
               // at the approval card, which group.tsx labels with the
               // replying bot's name), confined to this group's section.
-              result = await executeAgentTool(call, approve, { section: `groups/${threadId}` });
+              result = await executeAgentTool(call, approve, { section: `groups/${threadId}`, signal });
               actionsTaken.push(call.name === 'vercel_deploy' ? 'vercel_deploy' : `${call.name} ${argStr('path') || argStr('query') || argStr('url')}`);
             } else if (call.name === 'mcp_call') {
               const srv = argStr('server');
               if (!mcpCallout.server || srv.toLowerCase() !== mcpCallout.server.name.toLowerCase()) {
                 result = `Error: mcp_call is only allowed for the server called out this turn${mcpCallout.server ? ` ("${mcpCallout.server.name}")` : ' (none called out)'}.`;
               } else {
-                result = await executeAgentTool(call, approve);
+                result = await executeAgentTool(call, approve, { signal });
               }
               actionsTaken.push(`mcp_call ${argStr('tool')}`);
             } else {
@@ -159,12 +162,13 @@ export async function runGroupMessage(
               if (!allowed) {
                 result = `Error: service "${svc}" is not enabled for this bot or called out this turn.`;
               } else {
-                result = await executeAgentTool(call, approve);
+                result = await executeAgentTool(call, approve, { signal });
               }
               actionsTaken.push(`service_request ${svc} ${argStr('path')}`);
             }
             results.push(`[Tool ${call.name} result]\n${result}`);
           }
+          for (const call of calls.slice(10)) results.push(`[Tool ${call.name} result]\nError: too many tool calls in one step (max 10 per step).`);
           loopHistory.push({ role: 'assistant', text: reply });
           loopHistory.push({ role: 'user', text: results.join('\n\n') });
           if (step === 7) break;

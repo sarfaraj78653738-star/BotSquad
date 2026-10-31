@@ -44,6 +44,21 @@ export async function getGoogleUser(): Promise<GoogleUser | null> {
   try { return JSON.parse(raw) as GoogleUser; } catch { return null; }
 }
 
+// Stored Google ID token for Worker calls (Bearer auth). Returns null
+// when no token was stored — note the current sign-in config does not
+// request an ID token (configure has no webClientId), so this is null
+// until sign-in is configured to request one; callers fail closed.
+export async function getGoogleIdToken(): Promise<string | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(TOKENS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { idToken?: string | null };
+    return parsed.idToken ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function saveGoogleSession(user: GoogleUser, idToken?: string): Promise<void> {
   await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
   await SecureStore.setItemAsync(TOKENS_KEY, JSON.stringify({ idToken: idToken ?? null }));
@@ -53,6 +68,14 @@ export async function signOutGoogle(): Promise<void> {
   try { await GoogleSignin.signOut(); } catch { /* wipe anyway */ }
   await SecureStore.deleteItemAsync(USER_KEY).catch(() => {});
   await SecureStore.deleteItemAsync(TOKENS_KEY).catch(() => {});
+}
+
+// Revokes the Google-side grant (Delete account). signOut alone only
+// ends the local session — Google would still list BotSquad as a
+// connected app until the user revoked manually. Best-effort: the
+// caller proceeds with deletion even if revoke fails (offline).
+export async function revokeGoogleAccess(): Promise<void> {
+  try { await GoogleSignin.revokeAccess(); } catch { /* deletion proceeds anyway */ }
 }
 
 // Native Google sign-in. Returns the user, or null when the user

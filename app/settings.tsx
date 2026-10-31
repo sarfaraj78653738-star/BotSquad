@@ -8,10 +8,11 @@ import { Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
 import * as FileSystem from 'expo-file-system';
 import { AlertDialog } from '../src/components/AlertDialog';
-import { getDb, listBots, listConnections, listMcpServers, wipeAllData } from '../src/lib/db';
-import { clearGoogleClientId, signOutGoogle } from '../src/lib/googleAuth';
+import { getSetting, listConnections, listMcpServers, wipeAllData } from '../src/lib/db';
+import { clearGoogleClientId, revokeGoogleAccess, signOutGoogle } from '../src/lib/googleAuth';
 import { deleteConnectionToken, deleteMcpToken } from '../src/lib/connections';
-import { cancelSubscription } from '../src/lib/premium';
+import { cancelSubscription, setPremium } from '../src/lib/premium';
+import { deleteCachedChatZips } from '../src/lib/chatExport';
 import { setApiKey } from '../src/lib/keys';
 import { ProviderId } from '../src/lib/types';
 import { workspaceDir } from '../src/lib/workspace';
@@ -179,13 +180,17 @@ export default function SettingsScreen() {
 
   // Account actions (user order 2026-10-31): Log out only ends the
   // Google session — chats, files, and settings stay on the device.
-  // Delete account wipes everything on the phone: the session, all
-  // database rows, all stored keys and connection tokens, and the
-  // workspace directory. It ALSO cancels the Remove Ads subscription
-  // first (best-effort, while still signed in) so billing stops too.
+  // One exception (fix 2026-11-01): the account-scoped premium flag
+  // is cleared on logout, because the flag was device-global and a
+  // second account signing in offline inherited it. Delete account
+  // wipes everything on the phone: the session, all database rows,
+  // all stored keys and connection tokens, and the workspace
+  // directory. It ALSO cancels the Remove Ads subscription first
+  // (best-effort, while still signed in) so billing stops too.
   // Both pause on a confirmation popup first.
   async function doLogout() {
     setDialog(null);
+    await setPremium(false).catch(() => {});
     await signOutGoogle().catch(() => {});
     router.replace('/login');
   }
@@ -198,22 +203,33 @@ export default function SettingsScreen() {
       // (offline, no subscription), deletion still proceeds and the
       // user can cancel from Razorpay/bank instead.
       await cancelSubscription().catch(() => {});
+      // Read the profile photo URI BEFORE wiping settings (fix
+      // 2026-11-01 — the photo file lives in the picker cache, not
+      // under workspace/, so the workspace delete missed it).
+      const photoUri = await getSetting('profile_photo_uri').catch(() => null);
       // Collect secret owners BEFORE wiping the database rows that
-      // name them.
-      const [conns, mcps, bots] = await Promise.all([listConnections(), listMcpServers(), listBots()]);
-      const db = await getDb();
-      const setups = await db.getAllAsync<{ provider: string }>('SELECT provider FROM model_setups');
-      const providers = [...new Set([...bots.map((b) => b.provider), ...setups.map((s) => s.provider)])];
+      // name them. Keys are cleared for the FIXED provider enum (fix
+      // 2026-11-01 — collecting providers from surviving rows missed
+      // keys whose rows were already deleted, leaving orphaned keys
+      // a later device holder could spend).
+      const [conns, mcps] = await Promise.all([listConnections(), listMcpServers()]);
+      const providers: ProviderId[] = ['openai-compatible', 'anthropic', 'gemini'];
       await Promise.all([
         ...conns.map((c) => deleteConnectionToken(c.id)),
         ...mcps.map((m) => deleteMcpToken(m.id)),
-        ...providers.map((p) => setApiKey(p as ProviderId, '')),
+        ...providers.map((p) => setApiKey(p, '')),
       ]).catch(() => {});
+      // Revoke the Google grant itself (fix 2026-11-01 — sign-out
+      // alone left BotSquad listed as a connected app). Best-effort:
+      // if revoke fails, deletion still proceeds.
+      await revokeGoogleAccess().catch(() => {});
       await signOutGoogle().catch(() => {});
       await clearGoogleClientId().catch(() => {});
       await wipeAllData().catch(() => {});
       const dir = await workspaceDir().catch(() => '');
       if (dir) await FileSystem.deleteAsync(dir, { idempotent: true }).catch(() => {});
+      if (photoUri && photoUri.startsWith('file://')) await FileSystem.deleteAsync(photoUri, { idempotent: true }).catch(() => {});
+      await deleteCachedChatZips().catch(() => {});
     } catch { /* wipe is best-effort; the gate still sends the user to login */ }
     router.replace('/login');
   }

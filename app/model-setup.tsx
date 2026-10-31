@@ -127,7 +127,10 @@ export default function ModelSetupScreen() {
           onPress: async () => {
             // The active chat config is left untouched: deleting a row only
             // removes it from the list, it does not switch the active model.
+            // Its key is cleared too (fix 2026-11-01 — deleting only the
+            // row left an orphaned key a later device holder could spend).
             await deleteModelSetup(s.id);
+            await setApiKey(s.provider, '');
             await refreshSaved();
           },
         },

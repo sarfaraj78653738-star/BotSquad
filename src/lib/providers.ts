@@ -145,21 +145,37 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
 // Bot browsing: fetch a PUBLIC page on the device, strip tags, truncate.
 // No paywall/CAPTCHA bypass, no login, no password handling. If the fetch
 // fails or looks like a login wall, the caller shows that plainly.
-export async function fetchPublicPageText(url: string): Promise<{ title: string; text: string; url: string }> {
+// Timeout (fix 2026-11-01 — a hung page stalled the agent step
+// forever): 15 seconds, plus the loop's AbortSignal when the caller
+// passes one (a user stop cancels the fetch too).
+export async function fetchPublicPageText(url: string, opts?: { signal?: AbortSignal }): Promise<{ title: string; text: string; url: string }> {
   if (!/^https?:\/\//i.test(url)) throw new ProviderError('BAD_URL', 'Only http(s) URLs can be browsed.');
-  const res = await fetch(url, { headers: { 'User-Agent': 'BotSquad/0.1 (public page reader)' } });
-  if (res.status === 401 || res.status === 403) throw new ProviderError('LOGIN_REQUIRED', 'This page needs a login or blocks automated reading. Open it yourself in the in-chat browser instead — the Bot will not sign in for you.');
-  if (!res.ok) throw new ProviderError('PAGE_ERROR', `Could not load that page (HTTP ${res.status}).`);
-  const html = await res.text();
-  const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? url).trim();
-  const text = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 6000);
-  if (!text) throw new ProviderError('PAGE_EMPTY', 'That page had no readable text.');
-  return { title, text, url };
+  if (opts?.signal?.aborted) throw new ProviderError('NETWORK', 'That page took too long to load.');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  const onAbort = () => controller.abort();
+  opts?.signal?.addEventListener('abort', onAbort);
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'BotSquad/0.1 (public page reader)' }, signal: controller.signal });
+    if (res.status === 401 || res.status === 403) throw new ProviderError('LOGIN_REQUIRED', 'This page needs a login or blocks automated reading. Open it yourself in the in-chat browser instead — the Bot will not sign in for you.');
+    if (!res.ok) throw new ProviderError('PAGE_ERROR', `Could not load that page (HTTP ${res.status}).`);
+    const html = await res.text();
+    const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? url).trim();
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 6000);
+    if (!text) throw new ProviderError('PAGE_EMPTY', 'That page had no readable text.');
+    return { title, text, url };
+  } catch (e) {
+    if (controller.signal.aborted) throw new ProviderError('NETWORK', 'That page took too long to load.');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    opts?.signal?.removeEventListener('abort', onAbort);
+  }
 }

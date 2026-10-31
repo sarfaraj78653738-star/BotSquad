@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Field } from '../src/components/ui';
 import { ageFromDob, setAgreement } from '../src/lib/agreement';
-import { signOutGoogle } from '../src/lib/googleAuth';
+import { getGoogleUser, signOutGoogle } from '../src/lib/googleAuth';
 import { useTokens } from '../src/lib/tokens';
 
 // First-run gate (user order 2026-10-31): a signed-in user who has
@@ -25,7 +25,13 @@ export default function AgreeScreen() {
     setBusy(true);
     setError('');
     try {
-      await setAgreement();
+      const user = await getGoogleUser().catch(() => null);
+      if (!user) {
+        await signOutGoogle().catch(() => {});
+        router.replace('/login');
+        return;
+      }
+      await setAgreement(user.sub);
       router.replace('/');
     } finally {
       setBusy(false);

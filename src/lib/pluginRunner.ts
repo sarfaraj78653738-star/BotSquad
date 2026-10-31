@@ -33,7 +33,13 @@ export type RunPluginResult = { ok: boolean; result?: string; logs: string[]; er
 // problems with the plugin's own text. Listens on both window and
 // document for the host's messages; duplicate deliveries are
 // harmless (a repeated 'run' id is ignored, a spent call id is gone).
-export const PLUGIN_RUNNER_HTML = `<!DOCTYPE html><html><body><script>(function(){
+// CSP (fix 2026-11-01 — the page previously had no CSP, so plugin
+// code could fetch any bridged file's contents out to any server):
+// the page's own inline script + new Function need unsafe-inline +
+// unsafe-eval, but NOTHING else may load or connect — no network,
+// no frames, no workers, no images, no form posts. Bridge calls
+// (postMessage) are not network and are unaffected.
+export const PLUGIN_RUNNER_HTML = `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; form-action 'none'; img-src 'none'; media-src 'none'; base-uri 'none'"></head><body><script>(function(){
 var runId = null, calls = {}, callSeq = 0, finished = false;
 function send(o){ window.ReactNativeWebView.postMessage(JSON.stringify(o)); }
 function hostCall(name, args){
@@ -97,6 +103,21 @@ export function setPluginReady(): void {
   flushReadyWaiters();
 }
 
+// Per-run reset (fix 2026-11-01 — the page was never reloaded, so a
+// listener planted by run N saw run N+1's code + input): the host
+// registers a remount callback here; pump() calls
+// requestPluginHostReset() before each run, which clears the stale
+// transport + ready flag so the run waits for the FRESH page.
+let hostResetListener: (() => void) | null = null;
+export function registerPluginHostReset(fn: (() => void) | null): void {
+  hostResetListener = fn;
+}
+export function requestPluginHostReset(): void {
+  hostReady = false;
+  transport = null;
+  hostResetListener?.();
+}
+
 function flushReadyWaiters(): void {
   if (transport && hostReady) {
     const w = readyWaiters.splice(0);
@@ -158,6 +179,10 @@ async function pump(): Promise<void> {
     finish({ ok: false, logs, error: 'Timed out after 30s (the plugin never called pluginDone — it must call pluginDone(result) when finished).' });
   }, job.opts.timeoutMs ?? 30000);
   active = { id, section: job.opts.section ?? '', approve: job.opts.approve, logs, finish, timer };
+  // Fresh page for every run (see registerPluginHostReset above): the
+  // previous run's listeners die with the old WebView, so they can
+  // never observe or forge this run's bridge calls.
+  requestPluginHostReset();
   const hostOk = await waitForHost(10000);
   if (!hostOk || !transport) {
     finish({ ok: false, logs, error: 'Plugin runner is not ready (the app needs the new version with the sandbox host).' });
@@ -209,7 +234,7 @@ export async function handlePageMessage(raw: string): Promise<void> {
       const p = scopedPath(run.section, argStr(0));
       const content = argStr(1);
       if (!p) throw new Error('invalid path (paths stay inside the workspace, no "..").');
-      const ok = await run.approve(`Write ${p} (plugin)`, content.slice(0, 800));
+      const ok = await run.approve(`Write ${p} (plugin)`, content);
       if (!ok) throw new Error('rejected by user.');
       await writeWorkspaceFile(p, content);
       reply({ type: 'result', id: callId, value: 'ok' });

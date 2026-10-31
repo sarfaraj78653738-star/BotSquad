@@ -124,7 +124,7 @@ function AuthGate() {
       if (!alive) return;
       setAuth(u ? 'authed' : 'guest');
       if (u) {
-        const a = await getAgreement().catch(() => null);
+        const a = await getAgreement(u.sub).catch(() => null);
         if (!alive) return;
         setAgreed(a !== null);
       } else {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Keyboard, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AdSlot, Button, LoadingRow } from './ui';
@@ -395,12 +395,17 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
           const calls = parseToolCalls(reply);
           if (calls.length === 0) break;
           const results: string[] = [];
-          for (const call of calls) {
-            const result = await executeAgentTool(call, requestApproval);
+          // Per-step cap (fix 2026-11-01 — steps were capped at 8 but
+          // a single step could run any number of tool calls, so one
+          // reply could fire N page fetches): only the first 10 run;
+          // each excess block gets an error result and never executes.
+          for (const call of calls.slice(0, 10)) {
+            const result = await executeAgentTool(call, requestApproval, { signal });
             results.push(`[Tool ${call.name} result]\n${result}`);
             const target = typeof call.args.path === 'string' ? call.args.path : typeof call.args.query === 'string' ? call.args.query : typeof call.args.url === 'string' ? call.args.url : '';
             actionsTaken.push(target ? `${call.name} ${target}` : call.name);
           }
+          for (const call of calls.slice(10)) results.push(`[Tool ${call.name} result]\nError: too many tool calls in one step (max 10 per step).`);
           loopHistory.push({ role: 'assistant', text: reply });
           loopHistory.push({ role: 'user', text: results.join('\n\n') });
           if (step === 7) break;
@@ -436,20 +441,23 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
             const calls = parseToolCalls(reply).filter((c) => FILE_TOOL_NAMES.includes(c.name) || c.name === 'vercel_deploy' || c.name === 'mcp_call' || c.name === 'service_request');
             if (calls.length === 0) break;
             const results: string[] = [];
-            for (const call of calls) {
+            // Per-step cap, same as Main Chat (fix 2026-11-01): only
+            // the first 10 calls run; excess blocks get an error
+            // result and never execute.
+            for (const call of calls.slice(0, 10)) {
               const argStr = (k: string) => typeof call.args[k] === 'string' ? call.args[k] as string : '';
               let result: string;
               if (FILE_TOOL_NAMES.includes(call.name) || call.name === 'vercel_deploy') {
                 // Workspace file tools + deploy: same approval-gated
                 // path as Main Chat, confined to this bot's section.
-                result = await executeAgentTool(call, requestApproval, { section: `bots/${bot.id}` });
+                result = await executeAgentTool(call, requestApproval, { section: `bots/${bot.id}`, signal });
                 actionsTaken.push(call.name === 'vercel_deploy' ? 'vercel_deploy' : `${call.name} ${argStr('path') || argStr('query') || argStr('url')}`);
               } else if (call.name === 'mcp_call') {
                 const srv = argStr('server');
                 if (!mcpCallout.server || srv.toLowerCase() !== mcpCallout.server.name.toLowerCase()) {
                   result = `Error: mcp_call is only allowed for the server called out this turn${mcpCallout.server ? ` ("${mcpCallout.server.name}")` : ' (none called out)'}.`;
                 } else {
-                  result = await executeAgentTool(call, requestApproval);
+                  result = await executeAgentTool(call, requestApproval, { signal });
                 }
                 actionsTaken.push(`mcp_call ${argStr('tool')}`);
               } else {
@@ -458,12 +466,13 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
                 if (!allowed) {
                   result = `Error: service "${svc}" is not enabled for this bot or called out this turn.`;
                 } else {
-                  result = await executeAgentTool(call, requestApproval);
+                  result = await executeAgentTool(call, requestApproval, { signal });
                 }
                 actionsTaken.push(`service_request ${svc} ${argStr('path')}`);
               }
               results.push(`[Tool ${call.name} result]\n${result}`);
             }
+            for (const call of calls.slice(10)) results.push(`[Tool ${call.name} result]\nError: too many tool calls in one step (max 10 per step).`);
             loopHistory.push({ role: 'assistant', text: reply });
             loopHistory.push({ role: 'user', text: results.join('\n\n') });
             if (step === 7) break;
@@ -638,7 +647,10 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
         <View style={styles.approvalCard}>
           <Text style={styles.approvalTitle}>{t(language, 'approvalFile')}</Text>
           <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
-          <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
+          <ScrollView style={styles.approvalScroll}>
+            <Text style={styles.approvalPreview}>{pendingApproval.preview}</Text>
+          </ScrollView>
+          <Text style={styles.approvalLength}>{pendingApproval.preview.length} characters — scroll to see all of it before approving.</Text>
           <View style={styles.approvalRow}>
             <Button title={t(language, 'approve')} onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(true); setPendingApproval(null); }} />
             <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(false); setPendingApproval(null); }} />
@@ -671,6 +683,8 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   mistakeNote: { color: tokens.textMuted, fontSize: 12 },
   approvalCard: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, marginHorizontal: tokens.space.md, marginBottom: 8, padding: tokens.space.md },
   approvalPreview: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 6 },
+  approvalScroll: { marginTop: 6, maxHeight: 320 },
+  approvalLength: { color: tokens.textMuted, fontSize: 12, marginTop: 4 },
   approvalRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   approvalSummary: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600', marginTop: 4 },
   approvalTitle: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800' },

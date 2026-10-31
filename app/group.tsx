@@ -1,6 +1,6 @@
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, CheckBox, LoadingRow } from '../src/components/ui';
 import { BotAvatar } from '../src/components/BotAvatar';
@@ -443,7 +443,10 @@ export default function GroupScreen() {
               <Text style={styles.approvalTitle}>{t(language, 'approvalTool')}</Text>
               {workingBot ? <Text style={styles.approvalBot}>{workingBot}</Text> : null}
               <Text style={styles.approvalSummary}>{pendingApproval.summary}</Text>
-              <Text style={styles.approvalPreview} numberOfLines={8}>{pendingApproval.preview}</Text>
+              <ScrollView style={styles.approvalScroll}>
+                <Text style={styles.approvalPreview}>{pendingApproval.preview}</Text>
+              </ScrollView>
+              <Text style={styles.approvalLength}>{pendingApproval.preview.length} characters — scroll to see all of it before approving.</Text>
               <View style={styles.approvalRow}>
                 <Button title={t(language, 'approve')} onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(true); setPendingApproval(null); }} />
                 <Button title={t(language, 'reject')} variant="secondary" onPress={() => { pendingApprovalRef.current = null; pendingApproval.resolve(false); setPendingApproval(null); }} />
@@ -471,6 +474,8 @@ export default function GroupScreen() {
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   approvalCard: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, marginBottom: 8, padding: tokens.space.md },
   approvalPreview: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 6 },
+  approvalScroll: { marginTop: 6, maxHeight: 320 },
+  approvalLength: { color: tokens.textMuted, fontSize: 12, marginTop: 4 },
   approvalRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   approvalSummary: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '600', marginTop: 4 },
   approvalBot: { color: tokens.textMuted, fontSize: tokens.font.md, fontWeight: '700', marginTop: 2 },

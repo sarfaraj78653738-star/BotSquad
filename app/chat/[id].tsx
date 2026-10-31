@@ -1,10 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MenuButton } from '../../src/components/Drawer';
 import { ChatView } from '../../src/components/ChatView';
 import { BotAvatar } from '../../src/components/BotAvatar';
 import { avatarFor } from '../../src/lib/avatars';
+import { consumeFreshChat } from '../../src/lib/newChatFlag';
 import { useLanguage, useTokens } from '../../src/lib/tokens';
 import { t } from '../../src/lib/i18n';
 
@@ -19,18 +20,22 @@ export default function BotChatScreen() {
   const tokens = useTokens();
   const [language] = useLanguage();
   const styles = getStyles(tokens);
-  const { id, fresh, chatId } = useLocalSearchParams<{ id: string; fresh?: string; chatId?: string }>();
+  const { id, fresh: urlFresh, chatId } = useLocalSearchParams<{ id: string; fresh?: string; chatId?: string }>();
   const router = useRouter();
-  // Fresh is one-shot (user order 2026-10-30): strip it from the URL
-  // so a later remount can never spawn a second new thread. This
-  // parent effect runs after ChatView's mount effect, and that effect
-  // does not depend on fresh, so stripping cannot restart it.
-  useEffect(() => { if (fresh === '1') router.replace(`/chat/${id}` as never); }, []);
+  // Fresh comes from an in-memory flag set by the drawer's New-chat
+  // control (fix 2026-11-01 — a fresh=1 URL param could also arrive
+  // from an external deep link, creating a thread row with no user
+  // tap). The flag is consumed once on mount, so a later remount can
+  // never spawn a second new thread. The URL param is still stripped
+  // when present, so a stale ?fresh=1 in the URL is harmless — but
+  // it no longer decides anything on its own.
+  const [fresh] = useState(() => consumeFreshChat());
+  useEffect(() => { if (urlFresh === '1') router.replace(`/chat/${id}` as never); }, []);
   if (!id) return <View style={styles.wrap}><Text style={styles.sub}>{t(language, 'loadingChat')}</Text></View>;
   return (
     <ChatView
       botId={id}
-      fresh={fresh === '1'}
+      fresh={fresh}
       threadId={typeof chatId === 'string' ? chatId : undefined}
       topBar={(bot, actions) => (
         <View style={styles.header}>

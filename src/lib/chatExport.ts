@@ -112,3 +112,16 @@ function safeFileName(title: string): string {
 export async function exportChatZip(title: string, messages: { role: string; text: string }[]): Promise<void> {
   await shareZipFile(safeFileName(title), zipFilesBase64([{ name: 'chat.txt', text: buildTranscript(title, messages) }]));
 }
+
+// Delete account cleanup (fix 2026-11-01): chat-export ZIPs live in
+// the cache directory, outside workspace/, so the workspace delete
+// missed them. The only .zip writer to the cache is shareZipFile
+// above, so every cached .zip is a chat export.
+export async function deleteCachedChatZips(): Promise<void> {
+  const dir = FileSystem.cacheDirectory;
+  if (!dir) return;
+  const names = await FileSystem.readDirectoryAsync(dir).catch(() => [] as string[]);
+  await Promise.all(
+    names.filter((n) => n.endsWith('.zip')).map((n) => FileSystem.deleteAsync(`${dir}${n}`, { idempotent: true }).catch(() => {})),
+  );
+}
