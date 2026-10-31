@@ -102,6 +102,6 @@ Contact: GitHub Issues (Report & Feedback). This policy may change; the version 
     body: `• Found a bug, a wrong policy, or something harmful? Report it on the project's GitHub Issues page (button below).
 • Copyright complaints (DMCA): report via GitHub Issues with the work identified, the repo or file URL, and your contact details. We act on valid notices as the law requires.
 • Never include passwords, API keys, or private data in a public report.`,
-    action: { label: 'Open GitHub Issues', url: 'https://github.com/sarfaraj78653738-star/Teambot/issues' },
+    action: { label: 'Open GitHub Issues', url: 'https://github.com/sarfaraj78653738-star/BotSquad/issues' },
   },
 ];
