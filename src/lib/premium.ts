@@ -66,27 +66,41 @@ export type OrderInfo = {
   alreadyGranted: boolean;
 };
 
+// Grant status against the Worker. 'unknown' covers every case where
+// the Worker cannot positively answer (not configured, not signed in,
+// network failure, Worker error) — callers must NEVER treat 'unknown'
+// as 'not granted', or an offline user would lose premium.
+export type GrantStatus = 'granted' | 'not-granted' | 'unknown';
+export async function checkGrantStatus(): Promise<GrantStatus> {
+  if (!PREMIUM_WORKER_URL) return 'unknown';
+  const user = await getGoogleUser().catch(() => null);
+  if (!user) return 'unknown';
+  try {
+    const res = await fetch(`${PREMIUM_WORKER_URL}/grant?userId=${encodeURIComponent(user.sub)}`);
+    if (!res.ok) return 'unknown';
+    const json = (await res.json().catch(() => null)) as { granted?: boolean } | null;
+    return json?.granted === true ? 'granted' : 'not-granted';
+  } catch {
+    return 'unknown';
+  }
+}
+
 // Grant check against the Worker. Returns false when the Worker is not
 // configured, the user is not signed in, or the network fails — never
 // throws, so callers can safely re-check on every visit.
 export async function checkGrant(): Promise<boolean> {
-  if (!PREMIUM_WORKER_URL) return false;
-  const user = await getGoogleUser().catch(() => null);
-  if (!user) return false;
-  try {
-    const res = await fetch(`${PREMIUM_WORKER_URL}/grant?userId=${encodeURIComponent(user.sub)}`);
-    if (!res.ok) return false;
-    const json = (await res.json().catch(() => null)) as { granted?: boolean } | null;
-    return json?.granted === true;
-  } catch {
-    return false;
-  }
+  return (await checkGrantStatus()) === 'granted';
 }
 
+// Syncs the local premium flag BOTH ways from the Worker (the source
+// of truth): granted → on, positively not-granted → off (refund /
+// cancel revoke), unknown → leave unchanged (never revoke on a
+// network failure or Worker error).
 export async function syncPremiumFromGrant(): Promise<boolean> {
-  const granted = await checkGrant();
-  if (granted) await setPremium(true);
-  return granted;
+  const status = await checkGrantStatus();
+  if (status === 'granted') await setPremium(true);
+  else if (status === 'not-granted') await setPremium(false);
+  return status === 'granted';
 }
 
 // Returns a pending order for reuse when one exists (retry = same

@@ -130,6 +130,24 @@ export default {
           }
         }
       }
+      if (event.event === 'refund.processed') {
+        // Any refund of a granted payment revokes the grant (one-time
+        // product: partial or full, the user no longer owns it). The
+        // refund entity carries the original payment id, so the grant
+        // is found the same way the capture stored it. Only
+        // 'processed' revokes — 'created' is just initiated, money
+        // not yet returned. Signature was already verified above, so
+        // a forged refund cannot revoke someone else's premium.
+        const refund = event.payload?.refund?.entity;
+        const paymentId = refund?.payment_id;
+        if (paymentId) {
+          const userId = await env.GRANTS.get(`payment:${paymentId}`);
+          if (userId) {
+            await env.GRANTS.delete(`grant:${userId}`);
+            await env.GRANTS.delete(`payment:${paymentId}`);
+          }
+        }
+      }
       return new Response('ok');
     }
 

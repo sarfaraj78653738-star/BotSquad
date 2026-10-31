@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { getDb } from '../src/lib/db';
 import { getGoogleUser } from '../src/lib/googleAuth';
+import { syncPremiumFromGrant } from '../src/lib/premium';
 import { BOT_TEMPLATES, nowIso, newId } from '../src/lib/types';
 import { listBots, saveBot } from '../src/lib/db';
 import { DrawerProvider } from '../src/components/Drawer';
@@ -156,6 +157,11 @@ export default function RootLayout() {
           await saveBot({ ...t, id: newId(), isPinned: 0, createdAt: now, updatedAt: now });
         }
       }
+      // Launch premium re-check (refund/cancel revoke): best-effort,
+      // never blocks boot, and never revokes on a network failure or
+      // Worker error — sync is a no-op when the Worker cannot
+      // positively answer.
+      await syncPremiumFromGrant().catch(() => {});
     })().catch(() => {});
   }, []);
   return (
