@@ -8,14 +8,14 @@ import { getSetting, setSetting } from '../src/lib/db';
 import { useLanguage, useTokens } from '../src/lib/tokens';
 import { t } from '../src/lib/i18n';
 
-// Profile — local only. There is no login and no account in Phase 1, so
-// there is deliberately no Delete Account button, no billing row, and no
-// account row here: deleting an "account" would mean wiping local data,
-// which was not ordered. Everything on this page stays on the device:
+// Profile — local only. Everything on this page stays on the device:
 // names and preferences live in local storage, the photo is a local
-// file URI, and nothing here is uploaded anywhere. The only place
-// profile data leaves the device is inside a chat prompt the user
-// already sends to their own chosen provider (see prompt.ts).
+// file URI (or the Google photo URL after sign-in), and nothing here
+// is uploaded anywhere. The only place profile data leaves the device
+// is inside a chat prompt the user already sends to their own chosen
+// provider (see prompt.ts). Account actions live in Settings, not
+// here: Log out ends the Google session, Delete account wipes
+// everything on the phone.
 export default function ProfileScreen() {
   const tokens = useTokens();
   const [language] = useLanguage();

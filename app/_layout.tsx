@@ -1,9 +1,10 @@
-import { Stack, useRootNavigationState, useRouter } from 'expo-router';
-import { Linking } from 'react-native';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import { Linking, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { getDb } from '../src/lib/db';
+import { getGoogleUser } from '../src/lib/googleAuth';
 import { BOT_TEMPLATES, nowIso, newId } from '../src/lib/types';
 import { listBots, saveBot } from '../src/lib/db';
 import { DrawerProvider } from '../src/components/Drawer';
@@ -57,6 +58,47 @@ function DeepLinkHandler() {
   return null;
 }
 
+// Launch gate (user order 2026-10-31, supersedes the old
+// "login is optional" rule): a new user sees the login screen
+// first; once signed in, the login screen never appears again.
+// Guests may only be on /login (the gate itself) or /legal
+// (Terms/Privacy linked from the login screen); anywhere else
+// bounces to /login. Signed-in users on /login bounce to Main
+// Chat. Auth is re-checked on every route change, so a sign-in
+// or sign-out takes effect immediately instead of bouncing the
+// user back on stale state.
+function AuthGate() {
+  const tokens = useTokens();
+  const router = useRouter();
+  const segments = useSegments();
+  const navState = useRootNavigationState();
+  const [auth, setAuth] = useState<'loading' | 'authed' | 'guest'>('loading');
+  const [checking, setChecking] = useState(true);
+  useEffect(() => {
+    if (!navState?.key) return;
+    let alive = true;
+    setChecking(true);
+    getGoogleUser().then((u) => {
+      if (!alive) return;
+      setAuth(u ? 'authed' : 'guest');
+      setChecking(false);
+    }).catch(() => {
+      if (!alive) return;
+      setAuth('guest');
+      setChecking(false);
+    });
+    return () => { alive = false; };
+  }, [navState?.key, segments]);
+  useEffect(() => {
+    if (checking || auth === 'loading') return;
+    const seg = segments[0];
+    if (auth === 'guest' && seg !== 'login' && seg !== 'legal') router.replace('/login');
+    else if (auth === 'authed' && seg === 'login') router.replace('/');
+  }, [auth, checking, segments, router]);
+  if (auth !== 'loading') return null;
+  return <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: tokens.bg, zIndex: 10 }} />;
+}
+
 export default function RootLayout() {
   useEffect(() => {
     (async () => {
@@ -77,6 +119,7 @@ export default function RootLayout() {
         <DrawerProvider>
           <ThemedSafeArea>
             <DeepLinkHandler />
+            <AuthGate />
             <PluginRunnerHost />
             <Stack screenOptions={{ headerShown: false }} />
           </ThemedSafeArea>

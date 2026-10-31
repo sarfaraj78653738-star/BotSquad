@@ -43,6 +43,22 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   return db;
 }
 
+// Delete account (user order 2026-10-31): wipe every local table,
+// keeping the schema so the next launch re-seeds the default bots.
+// Callers delete SecureStore secrets and the workspace directory
+// separately — this only clears SQLite.
+export async function wipeAllData(): Promise<void> {
+  const db = await getDb();
+  for (const table of [
+    'messages', 'group_messages', 'bot_memory', 'bot_skills',
+    'bot_connections', 'bot_mcp_tools', 'group_members',
+    'chats', 'group_threads', 'skills', 'routines', 'connections',
+    'mcp_servers', 'plugins', 'model_setups', 'bots', 'settings',
+  ]) {
+    try { await db.execAsync(`DELETE FROM ${table}`); } catch { /* keep wiping the rest */ }
+  }
+}
+
 function botRow(r: any): Bot {
   return {
     id: r.id, name: r.name, role: r.role, avatarColor: r.avatar_color, avatarIcon: r.avatar_icon, avatar: r.avatar ?? undefined,

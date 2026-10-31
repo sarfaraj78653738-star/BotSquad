@@ -6,6 +6,14 @@ import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Card } from '../src/components/ui';
 import { MenuButton } from '../src/components/Drawer';
+import * as FileSystem from 'expo-file-system';
+import { AlertDialog } from '../src/components/AlertDialog';
+import { getDb, listBots, listConnections, listMcpServers, wipeAllData } from '../src/lib/db';
+import { clearGoogleClientId, signOutGoogle } from '../src/lib/googleAuth';
+import { deleteConnectionToken, deleteMcpToken } from '../src/lib/connections';
+import { setApiKey } from '../src/lib/keys';
+import { ProviderId } from '../src/lib/types';
+import { workspaceDir } from '../src/lib/workspace';
 // No ads/payment import in GitHub v1 — see src/lib/ads.ts (ADS_ENABLED = false).
 import { ColorMode, FontStyle, useColorMode, useFontStyle, useLanguage, useTokens } from '../src/lib/tokens';
 import { t } from '../src/lib/i18n';
@@ -14,6 +22,9 @@ import { t } from '../src/lib/i18n';
 // short subtitle). Group 1 is the person + device: Profile, Color mode,
 // Font style, Permissions. Group 2 is the tool pages — Model setup, Connections,
 // Skills, Plugins, MCP servers, GitHub install, Routines.
+// Group 3 is the account: Log out and Delete account, each behind a
+// confirmation popup. The old Login row is gone: sign-in now happens
+// through the first-run launch gate, not from Settings.
 // Nothing stacks all of them on one page. Deliberately NOT here: no
 // Sharing section, no Voice section, no Upgrade/Billing, no
 // Capabilities toggles (no code execution, no web search toggle, no
@@ -21,7 +32,6 @@ import { t } from '../src/lib/i18n';
 // Notifications toggle (no notification system), no Time & focus.
 const MENU: { labelKey: string; detailKey: string; icon: React.ComponentProps<typeof Feather>['name']; route: string }[] = [
   { labelKey: 'modelSetup', detailKey: 'modelSetupDetail', icon: 'cpu', route: '/model-setup' },
-  { labelKey: 'login', detailKey: 'loginDetail', icon: 'user', route: '/login' },
   { labelKey: 'mainAvatar', detailKey: 'mainAvatarDetail', icon: 'smile', route: '/main-avatar' },
   { labelKey: 'connections', detailKey: 'connectionsDetail', icon: 'layers', route: '/connect' },
   { labelKey: 'skills', detailKey: 'skillsDetail', icon: 'zap', route: '/skills' },
@@ -86,6 +96,7 @@ export default function SettingsScreen() {
   const [fontStyle, setFontStyle] = useFontStyle();
   const [language] = useLanguage();
   const [picker, setPicker] = useState<'color' | 'font' | null>(null);
+  const [dialog, setDialog] = useState<'logout' | 'delete' | null>(null);
   const [permText, setPermText] = useState('Open system settings to review');
 
 
@@ -173,6 +184,40 @@ export default function SettingsScreen() {
   }, []);
 
 
+  // Account actions (user order 2026-10-31): Log out only ends the
+  // Google session — chats, files, and settings stay on the device.
+  // Delete account wipes everything on the phone: the session, all
+  // database rows, all stored keys and connection tokens, and the
+  // workspace directory. Both pause on a confirmation popup first.
+  async function doLogout() {
+    setDialog(null);
+    await signOutGoogle().catch(() => {});
+    router.replace('/login');
+  }
+
+  async function doDeleteAccount() {
+    setDialog(null);
+    try {
+      // Collect secret owners BEFORE wiping the database rows that
+      // name them.
+      const [conns, mcps, bots] = await Promise.all([listConnections(), listMcpServers(), listBots()]);
+      const db = await getDb();
+      const setups = await db.getAllAsync<{ provider: string }>('SELECT provider FROM model_setups');
+      const providers = [...new Set([...bots.map((b) => b.provider), ...setups.map((s) => s.provider)])];
+      await Promise.all([
+        ...conns.map((c) => deleteConnectionToken(c.id)),
+        ...mcps.map((m) => deleteMcpToken(m.id)),
+        ...providers.map((p) => setApiKey(p as ProviderId, '')),
+      ]).catch(() => {});
+      await signOutGoogle().catch(() => {});
+      await clearGoogleClientId().catch(() => {});
+      await wipeAllData().catch(() => {});
+      const dir = await workspaceDir().catch(() => '');
+      if (dir) await FileSystem.deleteAsync(dir, { idempotent: true }).catch(() => {});
+    } catch { /* wipe is best-effort; the gate still sends the user to login */ }
+    router.replace('/login');
+  }
+
   const colorOptions = COLOR_OPTIONS.map((o) => ({ id: o.id, label: t(language, o.labelKey), detail: t(language, o.detailKey) }));
   const fontOptions = FONT_OPTIONS.map((o) => ({ id: o.id, label: t(language, o.labelKey), detail: t(language, o.detailKey) }));
   const colorLabel = colorOptions.find((o) => o.id === colorMode)?.label ?? 'System';
@@ -242,6 +287,25 @@ export default function SettingsScreen() {
             </Pressable>
           ))}
         </Card>
+        <Text style={styles.sectionTitle}>Account</Text>
+        <Card>
+          <Pressable onPress={() => setDialog('logout')} style={styles.menuRow}>
+            <Feather name="log-out" size={20} color={tokens.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Log out</Text>
+              <Text style={styles.menuDetail}>Sign out of Google on this phone. Your chats and files stay on the device.</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => setDialog('delete')} style={[styles.menuRow, styles.menuRowDivider]}>
+            <Feather name="trash-2" size={20} color={tokens.danger} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, styles.menuLabelDanger]}>Delete account</Text>
+              <Text style={styles.menuDetail}>Permanently delete everything on this phone.</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={tokens.textMuted} />
+          </Pressable>
+        </Card>
       </ScrollView>
       <OptionSheet
         open={picker === 'color'}
@@ -258,6 +322,26 @@ export default function SettingsScreen() {
         selected={fontStyle}
         onSelect={(id) => setFontStyle(id as FontStyle)}
         onClose={() => setPicker(null)}
+      />
+      <AlertDialog
+        visible={dialog === 'logout'}
+        title="Log out?"
+        message="You will be signed out of Google on this phone. Your chats, files, and settings stay on the device. You can sign in again any time."
+        buttons={[
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Log out', onPress: () => { void doLogout(); } },
+        ]}
+        onDismiss={() => setDialog(null)}
+      />
+      <AlertDialog
+        visible={dialog === 'delete'}
+        title="Delete account?"
+        message="This permanently deletes your Google sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files from this phone. This cannot be undone."
+        buttons={[
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => { void doDeleteAccount(); } },
+        ]}
+        onDismiss={() => setDialog(null)}
       />
     </View>
   );
@@ -285,6 +369,7 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   input: { backgroundColor: tokens.surface, borderColor: tokens.border, borderRadius: tokens.radius.md, borderWidth: 1, color: tokens.text, fontSize: tokens.font.md, paddingHorizontal: 14, paddingVertical: 12 },
   menuDetail: { color: tokens.textMuted, fontSize: tokens.font.sm, marginTop: 2 },
   menuLabel: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '700' },
+  menuLabelDanger: { color: tokens.danger },
   menuRow: { alignItems: 'center', flexDirection: 'row', gap: 12, paddingVertical: 12 },
   menuRowDivider: { borderTopColor: tokens.border, borderTopWidth: 1 },
   modelRow: { flexDirection: 'row', gap: 8 },

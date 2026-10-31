@@ -1,10 +1,11 @@
 // Legal documents (user order 2026-10-29): a separate Legal section
 // inside Settings, so nothing legal lives as a wall of text on the
 // Settings page itself. These are plain-language policies written for
-// what this GitHub version actually does — local-only, no ads, no
-// payments, no login. They are NOT a lawyer's review: before any
-// store release, have them reviewed by a lawyer, and update them the
-// day any of these facts change (ads, payments, login, or a server).
+// what this version actually does — local-only, no ads, no payments,
+// login-first, on-phone plugin sandbox. They are NOT a lawyer's
+// review: before any store release, have them reviewed by a lawyer,
+// and update them the day any of these facts change (ads, payments,
+// a server, or a new data flow).
 export type LegalDoc = { id: string; title: string; body: string; action?: { label: string; url: string } };
 
 export const LEGAL_DOCS: LegalDoc[] = [
@@ -14,7 +15,8 @@ export const LEGAL_DOCS: LegalDoc[] = [
     body: `BotSquad Privacy — GitHub v1.
 • Chats, bots, skills, routines, and memory notes stay on your device in local storage.
 • Your API keys are stored only in the device secure store (Android Keystore). They are sent only to the provider you chose, in a direct call from your device. They are never sent to BotSquad or to any other server.
-• This GitHub version has NO ads and NO payments. Sign-in is optional, via Google only: your Google tokens stay in the device secure store and are never sent to BotSquad or to any other server.
+• This GitHub version has NO ads and NO payments. First launch signs in with Google only: your Google name, email, and photo fill your Profile, and your Google tokens stay in the device secure store and are never sent to BotSquad or to any other server. Once signed in, the login screen never appears again.
+• GitHub repos you download and plugins you run execute on the phone in a WebView sandbox. They can only use the bridged workspace files and public-page reads; they never see your keys or Google tokens.
 • This app is not affiliated with, endorsed by, or connected to any other AI product, and it makes no claim to be an official product of any other company.`,
   },
   {
@@ -24,6 +26,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
 • AI replies can be wrong. Verify important facts before acting on them.
 • You are responsible for your API keys, your bots, and anything you send, publish, or buy through your own accounts.
 • Do not use the app to break the law, bypass paywalls or CAPTCHAs, send spam, or harm others.
+• Plugins and skills you install from GitHub are third-party code and text, not BotSquad's. They run on your phone only after your approval, at your own risk; BotSquad is not liable for what they do.
 • The app is provided "as is", with no warranty. BotSquad is not liable for model outputs, provider outages, or losses from using the app.
 • These terms may change; the version inside the app is the current one.`,
   },
@@ -51,6 +54,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
     title: 'Data & Deletion',
     body: `• Everything — chats, bots, skills, workspace files, keys — lives only on your device.
 • Delete a chat, bot, skill, or file from its own screen to remove it.
+• Settings > Delete account wipes everything on the phone: the sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files.
 • Uninstalling the app removes all of its data from the device, including saved keys.`,
   },
   {

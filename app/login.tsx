@@ -8,6 +8,7 @@ import { BotAvatar } from '../src/components/BotAvatar';
 import { Button, Card, Field } from '../src/components/ui';
 import { AVATAR_VARIANTS } from '../src/lib/avatars';
 import { completeGoogleSignIn, getGoogleClientId, getGoogleUser, GOOGLE_DISCOVERY, GOOGLE_REDIRECT_URI, GOOGLE_SCOPES, GoogleUser, setGoogleClientId, signOutGoogle } from '../src/lib/googleAuth';
+import { getSetting, setSetting } from '../src/lib/db';
 import { useLanguage, useTokens } from '../src/lib/tokens';
 import { t } from '../src/lib/i18n';
 
@@ -19,7 +20,10 @@ WebBrowser.maybeCompleteAuthSession();
 // with one short line under it. Bottom: the Google button, then the
 // legal line (Terms / Privacy open the Legal section). Login is via
 // Google Console only (Desktop-type OAuth client, PKCE, no server of
-// ours) and it is OPTIONAL — the app still opens and works without it.
+// ours). Since 2026-10-31 it is the FIRST-RUN gate, not optional:
+// a new user sees this screen before anything else, and once signed
+// in, the gate never shows it again (sign out from Settings to see
+// it again).
 // The one exception to "nothing else": while no Google Client ID is
 // configured yet, a small one-time setup block asks for it (Google
 // Cloud Console → Credentials → OAuth client ID → Desktop app). Once
@@ -65,6 +69,22 @@ export default function LoginScreen() {
         const u = await completeGoogleSignIn(code, verifier, clientId);
         setUser(u);
         setMsg('');
+        // Fill the Profile screen from the Google account (user order
+        // 2026-10-31): only fields the user has not already filled,
+        // so later manual edits are never overwritten. Then open
+        // Main Chat — the launch gate keeps logged-in users out of
+        // this screen from now on.
+        try {
+          const [savedName, savedCall, savedPhoto] = await Promise.all([
+            getSetting('profile_full_name'),
+            getSetting('profile_call_name'),
+            getSetting('profile_photo_uri'),
+          ]);
+          if (!savedName && u.name) await setSetting('profile_full_name', u.name);
+          if (!savedCall && u.name) await setSetting('profile_call_name', u.name.split(' ')[0] ?? u.name);
+          if (!savedPhoto && u.picture) await setSetting('profile_photo_uri', u.picture);
+        } catch { /* profile fill is best-effort */ }
+        router.replace('/');
       } catch (e) {
         setMsg(e instanceof Error ? e.message : t(language, 'signInFailed'));
       } finally {
@@ -99,9 +119,13 @@ export default function LoginScreen() {
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
-          <Feather name="chevron-left" size={22} color={tokens.text} />
-        </Pressable>
+        {user ? (
+          <Pressable accessibilityLabel="Back to Settings" onPress={() => router.canGoBack() ? router.back() : router.replace('/settings')} style={styles.backRow}>
+            <Feather name="chevron-left" size={22} color={tokens.text} />
+          </Pressable>
+        ) : (
+          <View style={{ width: 44 }} />
+        )}
         <Text style={styles.appName}>BotSquad</Text>
         <View style={{ width: 44 }} />
       </View>

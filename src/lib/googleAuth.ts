@@ -38,6 +38,10 @@ export async function setGoogleClientId(clientId: string): Promise<void> {
   await SecureStore.setItemAsync(CLIENT_ID_KEY, clientId.trim());
 }
 
+export async function clearGoogleClientId(): Promise<void> {
+  await SecureStore.deleteItemAsync(CLIENT_ID_KEY).catch(() => {});
+}
+
 export async function getGoogleUser(): Promise<GoogleUser | null> {
   const raw = await SecureStore.getItemAsync(USER_KEY);
   if (!raw) return null;

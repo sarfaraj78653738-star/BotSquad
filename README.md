@@ -1,7 +1,7 @@
 # TeamBots — Phase 1 (placeholder brand, NOT final)
 
 Clean-room, original code and copy. No affiliation with any other AI product.
-No login, no server. Your chats stay on your device; your API keys stay in
+No server. First launch signs in with Google, then opens straight to Main Chat — after that, no login screen again. Your chats stay on your device; your API keys stay in
 the device secure store and are sent only to the provider you chose.
 
 ## What Phase 1 does
@@ -19,7 +19,7 @@ the device secure store and are sent only to the provider you chose.
   only, with source links in the work log. No login, no paywall/CAPTCHA bypass.
 - Skills, routines (draft on open), auto-improve memory notes (visible,
   editable, deletable; boundaries always win; the model is NOT fine-tuned).
-- Connections, plugins (definitions only, no code execution), MCP over
+- Connections, plugins (install from GitHub and run their JavaScript on the phone in a WebView sandbox — no server; skills run as chat instructions via /name callouts), MCP over
   HTTP/SSE only with per-tool enablement and approval-gated calls.
 - Universal GitHub install: paste a repo URL, see detected type, what will
   install, what runs on phone vs needs a host, and permissions/tools — then
@@ -42,6 +42,27 @@ the device secure store and are sent only to the provider you chose.
   a clearly labelled placeholder purchase. Premium removes ads ONLY.
   TODO in `src/lib/ads.ts`: replace with real AdMob IDs and a real Play
   Billing product ID before any Play release. No real IDs are shipped here.
+
+## GitHub skills & plugins (no server needed)
+- From chat, ask the bot to download a public repo: it lands in
+  workspace/repos/<owner>-<repo>/ (latest files, single branch).
+- Ask the bot to run it: a repo is downloaded first if needed, its
+  entry file is found automatically (package.json main, index.js,
+  main.js, plugin.js), and its JavaScript runs on the phone in a
+  hidden WebView sandbox. Download, run, and every file write pause
+  for your approval in chat.
+- A repo with only SKILL.md installs as a skill instead: use it with
+  "/name ..." at the start of a chat message. Tools > GitHub install
+  does the same install from a pasted repo URL.
+- Sandbox limits: JavaScript only — no Node APIs, no native modules,
+  no npm packages that need Node built-ins. The plugin can only use
+  the bridged workspace files and public-page reads; it never sees
+  your keys or app data. Plugins that need a server still need one.
+- First launch: the Claude-style login screen (Continue with Google
+  only) appears before Main Chat. Once signed in, it never appears
+  again. Settings has Log out and Delete account, both with a
+  confirmation popup; Delete account wipes the sign-in, all local
+  data, and workspace files from the phone.
 
 ## Run it (on a real machine with Android Studio / Expo Go)
 ```bash
