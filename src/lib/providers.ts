@@ -16,9 +16,14 @@ export class ProviderError extends Error {
 
 function cleanError(status: number): ProviderError {
   if (status === 401 || status === 403) return new ProviderError('INVALID_KEY', 'Your API key was rejected. Check the key in Settings and try again.', status);
-  if (status === 429) return new ProviderError('RATE_LIMIT', 'The provider rate-limited this request (429). Wait a bit and try again. No retry loop was run.', status);
+  if (status === 429) return new ProviderError('RATE_LIMIT', 'Rate limited. Wait a bit and try again.', status);
   if (status === 402) return new ProviderError('BILLING', 'The provider reports a billing / credit problem. Check your provider account.', status);
-  return new ProviderError('PROVIDER_ERROR', `The provider returned HTTP ${status}.`, status);
+  // Short one-liners only (user order 2026-10-31): the user sees what
+  // happened + what to do, never a bare number. The status stays on
+  // the error object for debugging, not in the shown text.
+  if (status === 503) return new ProviderError('PROVIDER_ERROR', 'Provider is busy. Try again in a few minutes.', status);
+  if (status === 504) return new ProviderError('PROVIDER_ERROR', 'Provider took too long. Try again.', status);
+  return new ProviderError('PROVIDER_ERROR', 'Provider error. Try again shortly.', status);
 }
 
 const OPENAI_DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
