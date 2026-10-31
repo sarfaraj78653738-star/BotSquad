@@ -81,7 +81,11 @@ export default function WorkspaceScreen() {
           </Pressable>
         </View>
         {preview.uri ? (
-          <WebView source={{ uri: preview.uri }} javaScriptEnabled allowFileAccess originWhitelist={['*']} style={{ flex: 1 }} />
+          // Preview WebView: JavaScript stays on for interactive
+          // pages, but file access is OFF — previewed page code
+          // cannot read other local files, and this WebView has no
+          // bridge to app data or keys (unlike the plugin sandbox).
+          <WebView source={{ uri: preview.uri }} javaScriptEnabled allowFileAccess={false} originWhitelist={['*']} style={{ flex: 1 }} />
         ) : (
           <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
             <Text style={styles.previewText}>{preview.text}</Text>

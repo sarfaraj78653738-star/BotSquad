@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
+import { AlertDialog } from '../src/components/AlertDialog';
 import { deleteSkill, listSkills, saveSkill } from '../src/lib/db';
 import { Skill, newId, nowIso } from '../src/lib/types';
 import { useLanguage, useTokens } from '../src/lib/tokens';
@@ -22,6 +23,8 @@ export default function SkillsScreen() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [msg, setMsg] = useState('');
   const [detail, setDetail] = useState<Skill | null>(null);
+  const [infoAlert, setInfoAlert] = useState<{ title: string; message: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const [skillName, setSkillName] = useState('');
   const [skillTemplate, setSkillTemplate] = useState('');
@@ -33,7 +36,7 @@ export default function SkillsScreen() {
   useFocusEffect(refresh);
 
   async function addSkill() {
-    if (!skillName.trim() || !skillTemplate.trim()) { Alert.alert(t(language, 'missingFields'), t(language, 'skillNeeds')); return; }
+    if (!skillName.trim() || !skillTemplate.trim()) { setInfoAlert({ title: t(language, 'missingFields'), message: t(language, 'skillNeeds') }); return; }
     if (editingId) {
       const original = skills.find((s) => s.id === editingId);
       await saveSkill({ id: editingId, botId: original ? original.botId : null, name: skillName.trim(), template: skillTemplate, source: original ? original.source : 'local', repoUrl: original ? original.repoUrl : null, permissions: original ? original.permissions : '', createdAt: original ? original.createdAt : nowIso() });
@@ -69,10 +72,7 @@ export default function SkillsScreen() {
             <Text style={styles.bodyText}>{detail.template}</Text>
             <Button title={t(language, 'editSkillBtn')} variant="secondary" onPress={() => { setEditingId(detail.id); setSkillName(detail.name); setSkillTemplate(detail.template); setDetail(null); }} />
             <View style={{ height: 8 }} />
-            <Button title={t(language, 'deleteSkillBtn')} variant="danger" onPress={() => Alert.alert(t(language, 'deleteSkillTitle'), `${detail.name} ${t(language, 'willBeRemovedGeneric')}`, [
-              { text: t(language, 'cancel'), style: 'cancel' },
-              { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteSkill(detail.id); setDetail(null); refresh(); } },
-            ])} />
+            <Button title={t(language, 'deleteSkillBtn')} variant="danger" onPress={() => setDeleteTarget({ id: detail.id, name: detail.name })} />
           </>
         ) : (
           <>
@@ -95,6 +95,23 @@ export default function SkillsScreen() {
           </>
         )}
       </ScrollView>
+      <AlertDialog
+        visible={infoAlert !== null}
+        title={infoAlert?.title ?? ''}
+        message={infoAlert?.message}
+        buttons={[{ text: 'OK' }]}
+        onDismiss={() => setInfoAlert(null)}
+      />
+      <AlertDialog
+        visible={deleteTarget !== null}
+        title={t(language, 'deleteSkillTitle')}
+        message={deleteTarget ? `${deleteTarget.name} ${t(language, 'willBeRemovedGeneric')}` : ''}
+        buttons={[
+          { text: t(language, 'cancel'), style: 'cancel' },
+          { text: t(language, 'delete'), style: 'destructive', onPress: async () => { if (!deleteTarget) return; await deleteSkill(deleteTarget.id); setDetail(null); setDeleteTarget(null); refresh(); } },
+        ]}
+        onDismiss={() => setDeleteTarget(null)}
+      />
     </View>
   );
 }

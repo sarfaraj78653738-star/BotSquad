@@ -21,6 +21,11 @@
 //   POST /cancel-subscription { userId } -> { ok: true } (cancels
 //     IMMEDIATELY — user choice 2026-10-31; the cancelled webhook
 //     then revokes the grant) or { nothingToCancel: true }.
+//   POST /reconcile { userId, pendingSubscriptionId? } -> { granted }
+//     or { unknown: true }. Re-verifies true status with Razorpay
+//     (Restore path; covers a lost activated webhook via the pending
+//     id). Unknown never revokes; a grant is removed only when every
+//     checked subscription is positively non-active.
 //   POST /webhook — Razorpay calls this. The signature is verified with
 //     the webhook secret before anything is trusted. Subscription
 //     status is the SOLE source of truth: activated/charged grant,
@@ -100,6 +105,20 @@ export default {
       const existing = await env.GRANTS.get(`grant:${userId}`);
       if (existing) return json({ alreadyGranted: true });
       const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+      // Fail closed on the Plan: a mis-typed dashboard Plan must never
+      // overcharge a user. Verify amount + currency strictly, and
+      // period/interval when the Plan reports them. (Retrieved Plans
+      // nest amount/currency under item; fall back to top level.)
+      const planRes = await fetch(`https://api.razorpay.com/v1/plans/${env.RAZORPAY_PLAN_ID}`, {
+        headers: { Authorization: `Basic ${auth}` },
+      });
+      if (!planRes.ok) return json({ error: 'plan check failed' }, 502);
+      const plan = await planRes.json();
+      const planAmount = plan?.item?.amount ?? plan?.amount;
+      const planCurrency = plan?.item?.currency ?? plan?.currency;
+      if (planAmount !== 19900 || planCurrency !== 'INR') return json({ error: 'plan mismatch' }, 500);
+      if (plan?.period && plan.period !== 'monthly') return json({ error: 'plan mismatch' }, 500);
+      if (plan?.interval && plan.interval !== 1) return json({ error: 'plan mismatch' }, 500);
       const res = await fetch('https://api.razorpay.com/v1/subscriptions', {
         method: 'POST',
         headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
@@ -133,6 +152,59 @@ export default {
       });
       if (!res.ok) return json({ error: 'cancel failed' }, 502);
       return json({ ok: true });
+    }
+
+    if (url.pathname === '/reconcile' && request.method === 'POST') {
+      // Re-verifies the TRUE subscription status with Razorpay (used
+      // by the app's Restore). Covers a lost activated webhook: the
+      // app passes its pending (unauthorised) subscription id too.
+      // Safe defaults throughout: a status we cannot verify never
+      // revokes a grant (unknown), and a grant is removed only when
+      // every checked subscription is positively non-active.
+      const { userId, pendingSubscriptionId } = await request.json().catch(() => ({}));
+      if (!userId) return json({ error: 'userId required' }, 400);
+      const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+      const candidates = [];
+      const grantRaw = await env.GRANTS.get(`grant:${userId}`);
+      if (grantRaw) {
+        try { const g = JSON.parse(grantRaw); if (g.subscription_id) candidates.push(g.subscription_id); } catch {}
+      }
+      try {
+        const raw = await env.GRANTS.get(`subs:${userId}`);
+        const list = raw ? JSON.parse(raw) : [];
+        for (const id of list) if (!candidates.includes(id)) candidates.push(id);
+      } catch {}
+      if (pendingSubscriptionId && !candidates.includes(pendingSubscriptionId)) candidates.push(pendingSubscriptionId);
+      if (candidates.length === 0) {
+        return json(grantRaw ? { unknown: true } : { granted: false });
+      }
+      let anyActive = false;
+      let anyChecked = false;
+      const stillActive = [];
+      for (const subId of candidates) {
+        const res = await fetch(`https://api.razorpay.com/v1/subscriptions/${subId}`, {
+          headers: { Authorization: `Basic ${auth}` },
+        });
+        if (!res.ok) continue;
+        anyChecked = true;
+        const sub = await res.json();
+        if (sub?.status === 'active') {
+          anyActive = true;
+          stillActive.push(subId);
+        }
+      }
+      if (!anyChecked) return json({ unknown: true });
+      if (anyActive) {
+        await env.GRANTS.put(
+          `grant:${userId}`,
+          JSON.stringify({ subscription_id: stillActive[0], status: 'active', at: new Date().toISOString() }),
+        );
+        await env.GRANTS.put(`subs:${userId}`, JSON.stringify(stillActive));
+        return json({ granted: true });
+      }
+      await env.GRANTS.delete(`grant:${userId}`);
+      await env.GRANTS.put(`subs:${userId}`, JSON.stringify([]));
+      return json({ granted: false });
     }
 
     if (url.pathname === '/webhook' && request.method === 'POST') {

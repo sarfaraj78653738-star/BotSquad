@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
+import { AlertDialog } from '../src/components/AlertDialog';
 import { deleteMcpServer, listMcpServers, saveMcpServer } from '../src/lib/db';
 import { deleteMcpToken, getMcpToken, setMcpToken } from '../src/lib/connections';
 import { listMcpTools, prepareMcpCall, requireHttpsUrl } from '../src/lib/mcp';
@@ -30,6 +31,8 @@ export default function McpScreen() {
   const [pendingCall, setPendingCall] = useState('');
   const [callResult, setCallResult] = useState('');
   const [msg, setMsg] = useState('');
+  const [infoAlert, setInfoAlert] = useState<{ title: string; message: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const [mcpName, setMcpName] = useState('');
   const [mcpUrl, setMcpUrl] = useState('');
@@ -49,8 +52,8 @@ export default function McpScreen() {
   }
 
   async function addMcpServer() {
-    if (!mcpName.trim() || !mcpUrl.trim()) { Alert.alert(t(language, 'checkMcp'), t(language, 'needsNameUrl')); return; }
-    try { requireHttpsUrl(mcpUrl.trim(), 'MCP server URL'); } catch (e) { Alert.alert(t(language, 'checkMcp'), e instanceof Error ? e.message : t(language, 'urlMustHttps')); return; }
+    if (!mcpName.trim() || !mcpUrl.trim()) { setInfoAlert({ title: t(language, 'checkMcp'), message: t(language, 'needsNameUrl') }); return; }
+    try { requireHttpsUrl(mcpUrl.trim(), 'MCP server URL'); } catch (e) { setInfoAlert({ title: t(language, 'checkMcp'), message: e instanceof Error ? e.message : t(language, 'urlMustHttps') }); return; }
     const id = newId();
     await saveMcpServer({ id, name: mcpName.trim(), url: mcpUrl.trim(), createdAt: nowIso() });
     if (mcpToken.trim()) await setMcpToken(id, mcpToken);
@@ -60,13 +63,7 @@ export default function McpScreen() {
   }
 
   async function deleteServer(s: McpServer) {
-    Alert.alert(t(language, 'deleteMcpTitle'), `${s.name} ${t(language, 'willBeRemovedGeneric')}`, [
-      { text: t(language, 'cancel'), style: 'cancel' },
-      {
-        text: t(language, 'delete'), style: 'destructive',
-        onPress: async () => { await deleteMcpToken(s.id); await deleteMcpServer(s.id); setDetail(null); refresh(); },
-      },
-    ]);
+    setDeleteTarget({ id: s.id, name: s.name });
   }
 
   async function sendPendingCall() {
@@ -148,6 +145,23 @@ export default function McpScreen() {
           </>
         )}
       </ScrollView>
+      <AlertDialog
+        visible={infoAlert !== null}
+        title={infoAlert?.title ?? ''}
+        message={infoAlert?.message}
+        buttons={[{ text: 'OK' }]}
+        onDismiss={() => setInfoAlert(null)}
+      />
+      <AlertDialog
+        visible={deleteTarget !== null}
+        title={t(language, 'deleteMcpTitle')}
+        message={deleteTarget ? `${deleteTarget.name} ${t(language, 'willBeRemovedGeneric')}` : ''}
+        buttons={[
+          { text: t(language, 'cancel'), style: 'cancel' },
+          { text: t(language, 'delete'), style: 'destructive', onPress: async () => { if (!deleteTarget) return; await deleteMcpToken(deleteTarget.id); await deleteMcpServer(deleteTarget.id); setDetail(null); setDeleteTarget(null); refresh(); } },
+        ]}
+        onDismiss={() => setDeleteTarget(null)}
+      />
     </View>
   );
 }

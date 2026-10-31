@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../src/components/ui';
+import { AlertDialog } from '../src/components/AlertDialog';
 import { deleteConnection, listConnections, saveConnection } from '../src/lib/db';
 import { deleteConnectionToken, getConnectionToken, setConnectionToken } from '../src/lib/connections';
 import { CONNECTION_CATALOG, CONNECTION_CATEGORIES, COMING_SOON_SERVICES, catalogFor, CatalogService } from '../src/lib/connectionCatalog';
@@ -37,6 +38,8 @@ export default function ConnectScreen() {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<ConnectView>({ kind: 'list' });
   const [msg, setMsg] = useState('');
+  const [infoAlert, setInfoAlert] = useState<{ title: string; message: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Add form
   const [addName, setAddName] = useState('');
@@ -73,7 +76,7 @@ export default function ConnectScreen() {
   async function doConnect() {
     const name = addName.trim() || (view.kind === 'add' && view.service ? view.service.service : '');
     const service = view.kind === 'add' && view.service ? view.service.service : addService.trim();
-    if (!name || !service) { Alert.alert(t(language, 'missingFields'), t(language, 'needNameService')); return; }
+    if (!name || !service) { setInfoAlert({ title: t(language, 'missingFields'), message: t(language, 'needNameService') }); return; }
     const fields = view.kind === 'add' && view.service ? view.service.fields : [{ key: 'token', label: t(language, 'apiKeyTokenShort'), secure: true }];
     for (const f of fields) {
       if (!(fieldValues[f.key] ?? '').trim()) { setAddError(`${t(language, 'fillInLabel')} ${f.label}.`); return; }
@@ -140,7 +143,7 @@ export default function ConnectScreen() {
             {msg ? <Card><Text style={styles.msgText}>{msg}</Text></Card> : null}
             <Text style={styles.sectionTitle}>{t(language, 'connectedSection')}</Text>
             <Card>
-              <Pressable onPress={() => Alert.alert(t(language, 'browserWord'), t(language, 'browserAlertBody'))} style={styles.row}>
+              <Pressable onPress={() => setInfoAlert({ title: t(language, 'browserWord'), message: t(language, 'browserAlertBody') })} style={styles.row}>
                 <Feather name="globe" size={22} color={tokens.text} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{t(language, 'browserWord')}</Text>
@@ -199,7 +202,7 @@ export default function ConnectScreen() {
                 <Text style={styles.sectionTitle}>{t(language, 'comingSoonSection')}</Text>
                 <Card>
                   {COMING_SOON_SERVICES.filter((c) => matches(c.service) || matches(c.blurb)).map((c, i) => (
-                    <Pressable key={c.service} onPress={() => Alert.alert(`${c.service} ${t(language, 'comingSoonSuffix')}`, `${c.service} ${t(language, 'comingSoonBody')}`)} style={[styles.row, i > 0 && styles.rowDivider]}>
+                    <Pressable key={c.service} onPress={() => setInfoAlert({ title: `${c.service} ${t(language, 'comingSoonSuffix')}`, message: `${c.service} ${t(language, 'comingSoonBody')}` })} style={[styles.row, i > 0 && styles.rowDivider]}>
                       <Feather name={c.icon} size={22} color={tokens.text} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowTitle}>{c.service}</Text>
@@ -260,13 +263,27 @@ export default function ConnectScreen() {
             )}
             <Text style={styles.sub}>Available to Main Chat, all bots, and all groups — no per-bot setup needed.</Text>
             <View style={{ height: 12 }} />
-            <Button title={t(language, 'deleteConnectionBtn')} variant="danger" onPress={() => Alert.alert(t(language, 'deleteConnectionTitle'), `${view.conn.name} ${t(language, 'deleteConnectionBody')}`, [
-              { text: t(language, 'cancel'), style: 'cancel' },
-              { text: t(language, 'delete'), style: 'destructive', onPress: async () => { await deleteConnectionToken(view.conn.id); await deleteConnection(view.conn.id); setView({ kind: 'list' }); refresh(); } },
-            ])} />
+            <Button title={t(language, 'deleteConnectionBtn')} variant="danger" onPress={() => setDeleteTarget({ id: view.conn.id, name: view.conn.name })} />
           </>
         )}
       </ScrollView>
+      <AlertDialog
+        visible={infoAlert !== null}
+        title={infoAlert?.title ?? ''}
+        message={infoAlert?.message}
+        buttons={[{ text: 'OK' }]}
+        onDismiss={() => setInfoAlert(null)}
+      />
+      <AlertDialog
+        visible={deleteTarget !== null}
+        title={t(language, 'deleteConnectionTitle')}
+        message={deleteTarget ? `${deleteTarget.name} ${t(language, 'deleteConnectionBody')}` : ''}
+        buttons={[
+          { text: t(language, 'cancel'), style: 'cancel' },
+          { text: t(language, 'delete'), style: 'destructive', onPress: async () => { if (!deleteTarget) return; await deleteConnectionToken(deleteTarget.id); await deleteConnection(deleteTarget.id); setView({ kind: 'list' }); setDeleteTarget(null); refresh(); } },
+        ]}
+        onDismiss={() => setDeleteTarget(null)}
+      />
     </View>
   );
 }

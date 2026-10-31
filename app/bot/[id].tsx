@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, Field } from '../../src/components/ui';
+import { AlertDialog } from '../../src/components/AlertDialog';
 import { AvatarPicker } from '../../src/components/AvatarPicker';
 import { AVATAR_VARIANTS } from '../../src/lib/avatars';
 import { deleteMemory, getBot, listMemory, saveBot } from '../../src/lib/db';
@@ -25,6 +26,7 @@ export default function BotEditScreen() {
   });
   const [memory, setMemory] = useState<MemoryNote[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [infoAlert, setInfoAlert] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -37,7 +39,7 @@ export default function BotEditScreen() {
   }, [id, isNew]);
 
   async function save() {
-    if (!bot.name.trim() || !bot.task.trim()) { Alert.alert(t(language, 'missingFields'), t(language, 'missingBotFields')); return; }
+    if (!bot.name.trim() || !bot.task.trim()) { setInfoAlert({ title: t(language, 'missingFields'), message: t(language, 'missingBotFields') }); return; }
     await saveBot({ ...bot, updatedAt: nowIso() });
     router.back();
   }
@@ -86,6 +88,13 @@ export default function BotEditScreen() {
         </View>
       )}
     </ScrollView>
+      <AlertDialog
+        visible={infoAlert !== null}
+        title={infoAlert?.title ?? ''}
+        message={infoAlert?.message}
+        buttons={[{ text: 'OK' }]}
+        onDismiss={() => setInfoAlert(null)}
+      />
     </View>
   );
 }

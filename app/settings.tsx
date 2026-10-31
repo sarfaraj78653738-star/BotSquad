@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { Alert, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,6 +11,7 @@ import { AlertDialog } from '../src/components/AlertDialog';
 import { getDb, listBots, listConnections, listMcpServers, wipeAllData } from '../src/lib/db';
 import { clearGoogleClientId, signOutGoogle } from '../src/lib/googleAuth';
 import { deleteConnectionToken, deleteMcpToken } from '../src/lib/connections';
+import { cancelSubscription } from '../src/lib/premium';
 import { setApiKey } from '../src/lib/keys';
 import { ProviderId } from '../src/lib/types';
 import { workspaceDir } from '../src/lib/workspace';
@@ -131,56 +132,48 @@ export default function SettingsScreen() {
   // Deny; Allow triggers that permission's real OS request, Deny
   // records denied and moves to the next step. The row's status line
   // updates at the end.
+  // Dialogs use the themed AlertDialog (not Alert.alert): Alert.alert
+  // renders the SYSTEM dialog, which ignores the app's color mode and
+  // showed up white in dark mode (bug 2026-10-31, Camera/Mic shots).
+  const permResults = useRef<Record<string, string>>({});
+  const [permStep, setPermStep] = useState<null | 'mic' | 'camera' | 'photos' | 'files'>(null);
+  const permAdvance = useCallback((step: 'mic' | 'camera' | 'photos' | 'files', value: string) => {
+    permResults.current[step] = value;
+    if (step === 'mic') setPermStep('camera');
+    else if (step === 'camera') setPermStep('photos');
+    else if (step === 'photos') setPermStep('files');
+    else {
+      setPermStep(null);
+      const r = permResults.current;
+      setPermText(`Mic: ${r.mic} · Camera: ${r.camera} · Photos: ${r.photos} · Files: ${r.files}`);
+    }
+  }, []);
+  const requestMic = useCallback(async (): Promise<string> => {
+    if (Platform.OS !== 'android') return 'not asked';
+    try {
+      const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+      return r === 'granted' ? 'granted' : 'denied';
+    } catch { return 'denied'; }
+  }, []);
+  const requestFiles = useCallback(async (): Promise<string> => {
+    if (Platform.OS !== 'android') return 'not asked';
+    try {
+      const api = typeof Platform.Version === 'number' ? Platform.Version : 0;
+      if (api >= 33) {
+        const r = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
+        ]);
+        return Object.values(r).some((v) => v === 'granted') ? 'granted' : 'denied';
+      }
+      const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+      return r === 'granted' ? 'granted' : 'denied';
+    } catch { return 'denied'; }
+  }, []);
   const runPermissionFlow = useCallback(() => {
-    const results: Record<string, string> = {};
-    const finish = () => {
-      setPermText(`Mic: ${results.mic} · Camera: ${results.camera} · Photos: ${results.photos} · Files: ${results.files}`);
-    };
-    const requestMic = async (): Promise<string> => {
-      if (Platform.OS !== 'android') return 'not asked';
-      try {
-        const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-        return r === 'granted' ? 'granted' : 'denied';
-      } catch { return 'denied'; }
-    };
-    const requestFiles = async (): Promise<string> => {
-      if (Platform.OS !== 'android') return 'not asked';
-      try {
-        const api = typeof Platform.Version === 'number' ? Platform.Version : 0;
-        if (api >= 33) {
-          const r = await PermissionsAndroid.requestMultiple([
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
-          ]);
-          return Object.values(r).some((v) => v === 'granted') ? 'granted' : 'denied';
-        }
-        const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
-        return r === 'granted' ? 'granted' : 'denied';
-      } catch { return 'denied'; }
-    };
-    const askFiles = () => {
-      Alert.alert('Files', 'Allow BotSquad to read files you pick?', [
-        { text: 'Deny', style: 'cancel', onPress: () => { results.files = 'denied'; finish(); } },
-        { text: 'Allow', onPress: async () => { results.files = await requestFiles(); finish(); } },
-      ]);
-    };
-    const askPhotos = () => {
-      Alert.alert('Photos', 'Allow BotSquad to use your photos?', [
-        { text: 'Deny', style: 'cancel', onPress: () => { results.photos = 'denied'; askFiles(); } },
-        { text: 'Allow', onPress: async () => { try { const r = await ImagePicker.requestMediaLibraryPermissionsAsync(); results.photos = r.status === 'granted' ? 'granted' : 'denied'; } catch { results.photos = 'denied'; } askFiles(); } },
-      ]);
-    };
-    const askCamera = () => {
-      Alert.alert('Camera', 'Allow BotSquad to use your camera?', [
-        { text: 'Deny', style: 'cancel', onPress: () => { results.camera = 'denied'; askPhotos(); } },
-        { text: 'Allow', onPress: async () => { try { const r = await ImagePicker.requestCameraPermissionsAsync(); results.camera = r.status === 'granted' ? 'granted' : 'denied'; } catch { results.camera = 'denied'; } askPhotos(); } },
-      ]);
-    };
-    Alert.alert('Microphone', 'Allow BotSquad to use your microphone for voice input?', [
-      { text: 'Deny', style: 'cancel', onPress: () => { results.mic = 'denied'; askCamera(); } },
-      { text: 'Allow', onPress: async () => { results.mic = await requestMic(); askCamera(); } },
-    ]);
+    permResults.current = {};
+    setPermStep('mic');
   }, []);
 
 
@@ -188,7 +181,9 @@ export default function SettingsScreen() {
   // Google session — chats, files, and settings stay on the device.
   // Delete account wipes everything on the phone: the session, all
   // database rows, all stored keys and connection tokens, and the
-  // workspace directory. Both pause on a confirmation popup first.
+  // workspace directory. It ALSO cancels the Remove Ads subscription
+  // first (best-effort, while still signed in) so billing stops too.
+  // Both pause on a confirmation popup first.
   async function doLogout() {
     setDialog(null);
     await signOutGoogle().catch(() => {});
@@ -198,6 +193,11 @@ export default function SettingsScreen() {
   async function doDeleteAccount() {
     setDialog(null);
     try {
+      // Cancel the subscription FIRST: it needs the Google session,
+      // which signOutGoogle below ends. Best-effort — if this fails
+      // (offline, no subscription), deletion still proceeds and the
+      // user can cancel from Razorpay/bank instead.
+      await cancelSubscription().catch(() => {});
       // Collect secret owners BEFORE wiping the database rows that
       // name them.
       const [conns, mcps, bots] = await Promise.all([listConnections(), listMcpServers(), listBots()]);
@@ -336,12 +336,33 @@ export default function SettingsScreen() {
       <AlertDialog
         visible={dialog === 'delete'}
         title="Delete account?"
-        message="This permanently deletes your Google sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files from this phone. This cannot be undone."
+        message="This permanently deletes your Google sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files from this phone. Your Remove Ads subscription (if any) will also be cancelled. This cannot be undone."
         buttons={[
           { text: 'Cancel', style: 'cancel' },
           { text: 'Delete', style: 'destructive', onPress: () => { void doDeleteAccount(); } },
         ]}
         onDismiss={() => setDialog(null)}
+      />
+      <AlertDialog
+        visible={permStep !== null}
+        title={permStep === 'mic' ? 'Microphone' : permStep === 'camera' ? 'Camera' : permStep === 'photos' ? 'Photos' : 'Files'}
+        message={permStep === 'mic' ? 'Allow BotSquad to use your microphone for voice input?' : permStep === 'camera' ? 'Allow BotSquad to use your camera?' : permStep === 'photos' ? 'Allow BotSquad to use your photos?' : 'Allow BotSquad to read files you pick?'}
+        buttons={[
+          { text: 'Deny', style: 'cancel', onPress: () => { if (permStep) permAdvance(permStep, 'denied'); } },
+          { text: 'Allow', onPress: async () => {
+            if (!permStep) return;
+            const step = permStep;
+            let value = 'denied';
+            try {
+              if (step === 'mic') value = await requestMic();
+              else if (step === 'camera') { const r = await ImagePicker.requestCameraPermissionsAsync(); value = r.status === 'granted' ? 'granted' : 'denied'; }
+              else if (step === 'photos') { const r = await ImagePicker.requestMediaLibraryPermissionsAsync(); value = r.status === 'granted' ? 'granted' : 'denied'; }
+              else value = await requestFiles();
+            } catch { value = 'denied'; }
+            permAdvance(step, value);
+          } },
+        ]}
+        onDismiss={() => setPermStep(null)}
       />
     </View>
   );

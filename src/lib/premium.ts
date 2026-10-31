@@ -161,6 +161,34 @@ export async function cancelSubscription(): Promise<void> {
   if (json?.nothingToCancel) throw new Error('No active subscription found for this account.');
 }
 
+// Re-verifies the TRUE subscription status with Razorpay via the
+// Worker (not just the Worker's stored grant). Used by Restore: a
+// paying user whose webhook was lost still gets premium back.
+// Returns the synced local premium flag. On any failure or an
+// 'unknown' answer, falls back to the stored-grant sync (never
+// revokes on uncertainty).
+export async function reconcileGrant(): Promise<boolean> {
+  if (!PREMIUM_WORKER_URL) return syncPremiumFromGrant();
+  const user = await getGoogleUser().catch(() => null);
+  if (!user) return syncPremiumFromGrant();
+  try {
+    const pending = await getPendingSubscription();
+    const res = await fetch(`${PREMIUM_WORKER_URL}/reconcile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.sub, pendingSubscriptionId: pending }),
+    });
+    if (!res.ok) return syncPremiumFromGrant();
+    const json = (await res.json().catch(() => null)) as { granted?: boolean; unknown?: boolean } | null;
+    if (!json || json.unknown) return syncPremiumFromGrant();
+    if (json.granted === true) await setPremium(true);
+    else await setPremium(false);
+    return json.granted === true;
+  } catch {
+    return syncPremiumFromGrant();
+  }
+}
+
 // Polls the Worker grant (webhook arrival can lag the checkout success
 // screen by seconds). Returns true only on a verified grant.
 export async function pollGrant(timeoutMs = 60000): Promise<boolean> {

@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import RazorpayCheckout from 'react-native-razorpay';
 import { Card } from '../src/components/ui';
 import { useLanguage, useTokens } from '../src/lib/tokens';
 import { t } from '../src/lib/i18n';
@@ -14,22 +14,24 @@ import {
   createSubscription,
   isPremium,
   pollGrant,
+  reconcileGrant,
   setPendingSubscription,
   setPremium,
   syncPremiumFromGrant,
-  type SubscriptionInfo,
 } from '../src/lib/premium';
 
 // Ads & payments (user order 2026-10-31): Remove Ads is ₹199/month,
-// INR, a Razorpay subscription (UPI + card). Premium is active ONLY
-// WHILE the subscription is active, and ONLY after the Cloudflare
-// Worker confirms a webhook-verified subscription event — the
-// checkout success screen alone never grants it. A buy button that
-// grants premium with no verified payment was deliberately removed
-// on 2026-10-28 and must never return. Standing rule: premium removes
-// ads ONLY. Cancel ends the subscription IMMEDIATELY (user choice
-// 2026-10-31): the cancelled webhook revokes premium at once, no
-// refund for the remaining days.
+// INR, a Razorpay subscription (UPI + card) via the NATIVE Razorpay
+// SDK (react-native-razorpay plugin route, user choice 2026-10-31 —
+// better UPI than the old WebView checkout, which is removed).
+// Premium is active ONLY WHILE the subscription is active, and ONLY
+// after the Cloudflare Worker confirms a webhook-verified subscription
+// event — the SDK success callback alone never grants it. A buy button
+// that grants premium with no verified payment was deliberately
+// removed on 2026-10-28 and must never return. Standing rule: premium
+// removes ads ONLY. Cancel ends the subscription IMMEDIATELY (user
+// choice 2026-10-31): the cancelled webhook revokes premium at once,
+// no refund for the remaining days.
 // Until the Razorpay key id + Worker URL are filled in (see
 // src/lib/premium.ts), the buy button honestly reports that payments
 // are being set up. This version still shows NO ads.
@@ -42,7 +44,6 @@ export default function AdsPaymentsScreen() {
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [msg, setMsg] = useState('');
-  const [checkout, setCheckout] = useState<{ sub: SubscriptionInfo; name: string; email: string } | null>(null);
 
   const refresh = useCallback(async () => {
     const owned = await isPremium();
@@ -77,7 +78,36 @@ export default function AdsPaymentsScreen() {
         return;
       }
       const user = await getGoogleUser().catch(() => null);
-      setCheckout({ sub, name: user?.name ?? '', email: user?.email ?? '' });
+      // Native Razorpay SDK: opens Razorpay's own checkout UI (with
+      // native UPI intent flow). Its success result NEVER grants
+      // premium — only the Worker's webhook-verified grant does
+      // (pollGrant below). A dismissed/failed checkout takes no money.
+      try {
+        await RazorpayCheckout.open({
+          key: sub.keyId,
+          subscription_id: sub.subscriptionId,
+          name: 'BotSquad',
+          description: 'Remove Ads — ₹199/month',
+          prefill: { name: user?.name ?? '', email: user?.email ?? '' },
+          theme: { color: '#111111' },
+        });
+      } catch (e) {
+        const desc = (e as { description?: string })?.description;
+        setMsg(desc || 'Payment failed. No money was taken.');
+        return;
+      }
+      setVerifying(true);
+      setMsg('Verifying subscription...');
+      const granted = await pollGrant();
+      setVerifying(false);
+      if (granted) {
+        await setPremium(true);
+        await setPendingSubscription(null);
+        setPremiumState(true);
+        setMsg('Subscription active. Ads removed.');
+      } else {
+        setMsg('Payment received, verification is still pending. Premium will activate automatically — reopen this screen to check.');
+      }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Could not start the subscription. Try again.');
     } finally {
@@ -98,44 +128,14 @@ export default function AdsPaymentsScreen() {
     }
   }
 
-  async function onCheckoutMessage(raw: string) {
-    let data: { type?: string; error?: string } | null = null;
-    try {
-      data = JSON.parse(raw) as { type?: string; error?: string };
-    } catch {
-      return;
-    }
-    if (data?.type === 'dismissed') {
-      setCheckout(null);
-      return;
-    }
-    if (data?.type === 'failed') {
-      setCheckout(null);
-      setMsg(data.error ?? 'Payment failed. No money was taken.');
-      return;
-    }
-    if (data?.type === 'success') {
-      setCheckout(null);
-      setVerifying(true);
-      setMsg('Verifying subscription...');
-      const granted = await pollGrant();
-      setVerifying(false);
-      if (granted) {
-        await setPremium(true);
-        await setPendingSubscription(null);
-        setPremiumState(true);
-        setMsg('Subscription active. Ads removed.');
-      } else {
-        setMsg('Payment received, verification is still pending. Premium will activate automatically — reopen this screen to check.');
-      }
-    }
-  }
-
   async function restore() {
     setBusy(true);
     setMsg('');
     try {
-      const granted = await syncPremiumFromGrant();
+      // Reconcile re-verifies the TRUE subscription status with
+      // Razorpay (not just the Worker's stored grant), so a paying
+      // user whose webhook was lost still gets premium back.
+      const granted = await reconcileGrant();
       setPremiumState(granted);
       setMsg(granted ? 'Subscription restored.' : 'No active subscription found for this account.');
     } finally {
@@ -186,50 +186,8 @@ export default function AdsPaymentsScreen() {
         </Card>
         <Text style={styles.note}>{t(language, 'buyingNote')}</Text>
       </ScrollView>
-      <Modal visible={checkout !== null} animationType="slide" onRequestClose={() => setCheckout(null)}>
-        <View style={styles.checkoutWrap}>
-          <View style={styles.checkoutHeader}>
-            <Pressable onPress={() => setCheckout(null)} style={styles.backRow}>
-              <Feather name="x" size={22} color={tokens.text} />
-              <Text style={styles.backText}>Close</Text>
-            </Pressable>
-            <Text style={styles.headerTitle}>Payment</Text>
-            <View style={{ width: 84 }} />
-          </View>
-          {checkout ? (
-            <WebView
-              originWhitelist={['*']}
-              source={{ html: checkoutHtml(checkout.sub, checkout.name, checkout.email) }}
-              onMessage={(e) => onCheckoutMessage(e.nativeEvent.data)}
-            />
-          ) : null}
-        </View>
-      </Modal>
     </View>
   );
-}
-
-// Razorpay Checkout.js inside an in-app WebView. The page only opens
-// the checkout for the Worker-issued subscription id; it never
-// decides the price (the dashboard Plan fixes ₹199/month, INR).
-// '<' is escaped so a profile name can never break out of the script.
-function checkoutHtml(sub: SubscriptionInfo, name: string, email: string): string {
-  const esc = (s: string) => JSON.stringify(s).replace(/</g, '\\u003c');
-  return `<!DOCTYPE html><html><body><script src="https://checkout.razorpay.com/v1/checkout.js"></script><script>
-  var options = {
-    key: ${esc(sub.keyId)},
-    subscription_id: ${esc(sub.subscriptionId)},
-    name: 'BotSquad',
-    description: 'Remove Ads — ₹199/month',
-    prefill: { name: ${esc(name)}, email: ${esc(email)} },
-    theme: { color: '#111111' },
-    handler: function (r) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', payment_id: r.razorpay_payment_id, subscription_id: r.razorpay_subscription_id })); },
-    modal: { ondismiss: function () { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'dismissed' })); } }
-  };
-  var rzp = new Razorpay(options);
-  rzp.on('payment.failed', function (r) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'failed', error: (r.error && r.error.description) || 'Payment failed' })); });
-  rzp.open();
-  </script></body></html>`;
 }
 
 const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
@@ -239,8 +197,6 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   bold: { color: tokens.text, fontSize: tokens.font.md, fontWeight: '800', marginBottom: 4 },
   buyButton: { alignItems: 'center', backgroundColor: tokens.accent, borderRadius: tokens.radius.md, marginTop: 8, paddingVertical: 12 },
   buyText: { color: tokens.onAccent, fontSize: tokens.font.md, fontWeight: '800' },
-  checkoutHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
-  checkoutWrap: { backgroundColor: tokens.bg, flex: 1 },
   disabled: { opacity: 0.5 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: tokens.space.md, paddingVertical: 10 },
   headerTitle: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '800' },

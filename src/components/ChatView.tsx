@@ -25,7 +25,7 @@ import { parseConnectionCallout } from '../lib/connectionCallout';
 import { listMcpTools } from '../lib/mcp';
 import { ThreadMenu } from './ThreadMenu';
 import { chatWithBot } from '../lib/providers';
-import { errorCode, isRawErrorText } from '../lib/errors';
+import { isRawErrorText, legacyPlainMessage } from '../lib/errors';
 import { Bot, Message, newId, nowIso } from '../lib/types';
 import { useLanguage, useTokens } from '../lib/tokens';
 import { t, translateApproval } from '../lib/i18n';
@@ -75,9 +75,9 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
   const [chatId, setChatId] = useState('');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  // A failed reply shows ONLY a number ("Error 503") plus Retry — never
-  // a sentence, never raw provider text, never a numeric prefix.
-  const [failedCode, setFailedCode] = useState<number | null>(null);
+  // A failed reply shows a short plain-English sentence (user order
+  // 2026-10-31) plus Retry — never a bare number.
+  const [failedError, setFailedError] = useState<string | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -166,7 +166,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
 
   useEffect(() => {
     (async () => {
-      setFailedCode(null);
+      setFailedError(null);
       setFailedText(null);
       setAdsRemoved((await getSetting('premium_ads_removed')) === '1');
       if (universal) {
@@ -211,7 +211,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
     await setUniversalChatId(id);
     setChatId(id);
     setMessages([]);
-    setFailedCode(null);
+    setFailedError(null);
     setFailedText(null);
   }
 
@@ -315,7 +315,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
     // commands (read-only actions run, tap/type wait for approval).
     const browserRequest = parseBrowserRequest(text.trim());
     if (browserRequest.open) browserRef.current?.open(browserRequest.url);
-    setFailedCode(null);
+    setFailedError(null);
     setFailedText(null);
     setLoading(true);
     abortRef.current = new AbortController();
@@ -487,7 +487,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
       await addMessage(assistantMsg);
       setMessages([...next, assistantMsg]);
       // A delivered reply clears any earlier failure banner at once.
-      setFailedCode(null);
+      setFailedError(null);
       setFailedText(null);
       // Post-save notes (memory, auto-skill) are best-effort and live
       // in their own try/catch: a throw here used to land in the outer
@@ -514,7 +514,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
     } catch (e) {
       // A cancelled turn is not a failure: no error banner, no retry.
       if (!signal.aborted && (e as { name?: string } | null)?.name !== 'AbortError') {
-        setFailedCode(errorCode(e));
+        setFailedError(e instanceof Error ? e.message : 'Provider error. Try again shortly.');
         setFailedText(text.trim());
       }
     } finally {
@@ -578,7 +578,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
             return (
               <View style={styles.assistantRow}>
                 <Text style={styles.botLabel}>{bot.name}</Text>
-                <Text style={styles.failedText}>Error 503</Text>
+                <Text style={styles.failedText}>{legacyPlainMessage(item.text)}</Text>
               </View>
             );
           }
@@ -607,12 +607,12 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
       {loading && <LoadingRow label={universal ? t(language, 'working') : t(language, 'botWorking')} onStopAds={adsRemoved ? undefined : () => { router.push('/ads-payments'); }} />}
       {voiceNote ? <Text style={styles.voiceNote}>{voiceNote}</Text> : null}
 
-      {failedCode !== null && failedText ? (
+      {failedError !== null && failedText ? (
         <View style={styles.failedRow}>
-          <Text style={styles.failedText}>Error {failedCode}</Text>
+          <Text style={styles.failedText}>{failedError}</Text>
           <Pressable
             accessibilityLabel="Retry"
-            onPress={() => { const t = failedText; setFailedCode(null); setFailedText(null); void send(t, true); }}
+            onPress={() => { const t = failedText; setFailedError(null); setFailedText(null); void send(t, true); }}
             style={styles.retryButton}
           >
             <Text style={styles.retryText}>{t(language, 'retry')}</Text>

@@ -64,7 +64,7 @@ Contact: GitHub Issues (Report & Feedback). This policy may change; the version 
     title: 'Cancellation Policy',
     body: `• To cancel Remove Ads (₹199/month): open the purchase screen (Settings > Ads & payments) and tap Cancel subscription. Cancellation is IMMEDIATE: ads return at once. No refund for the remaining days.
 • You can also cancel from your Razorpay receipt or your bank/UPI app (revoking the mandate); the subscription then stops and premium is removed.
-• To cancel your whole account, use Settings > Delete account. It immediately wipes your sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files from this phone. This cannot be undone. Deleting your account does not by itself cancel a subscription — cancel the subscription first if you do not want the next charge.
+• To cancel your whole account, use Settings > Delete account. It first tries to cancel your subscription (while you are still signed in), then immediately wipes your sign-in, all bots, chats, skills, plugins, connections, settings, profile, and workspace files from this phone. This cannot be undone. If the subscription cancel fails because you are offline, cancel from your Razorpay receipt or your bank before deleting.
 • Cancelling does not delete data already sent to your chosen AI provider or payment processor; their policies govern that data.`,
   },
   {

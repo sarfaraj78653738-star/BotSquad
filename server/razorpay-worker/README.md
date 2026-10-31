@@ -37,6 +37,9 @@ Subscriptions > Plans > Create Plan:
 - Interval: monthly (period: 1 month)
 - Copy the Plan id (`plan_...`) into the `RAZORPAY_PLAN_ID` secret
   (step 2). The Plan fixes the price — the app never sends an amount.
+  The Worker also verifies the Plan (₹19900, INR, monthly, interval 1)
+  before creating any subscription — a mis-typed Plan is rejected,
+  never charged.
 
 ### 4b. Webhook
 
@@ -59,6 +62,10 @@ In `src/lib/premium.ts`, fill in:
 - `RAZORPAY_KEY_ID` — the public key id from Razorpay (safe to ship)
 - `PREMIUM_WORKER_URL` — the Worker URL from step 3
 
+Checkout uses the native Razorpay SDK (plugin route, not a WebView);
+the SDK success alone never grants premium — only the
+webhook-verified grant does.
+
 Then rebuild the APK. Until those two values are filled, the buy
 button honestly reports that payments are being set up.
 
@@ -67,8 +74,8 @@ button honestly reports that payments are being set up.
 1. Use Razorpay test keys in the Worker secrets, and a test-mode Plan.
 2. Subscribe from the app, pay with a test card (or test UPI).
 3. Premium must activate only after the `subscription.activated`
-   webhook arrives (the app polls the Worker grant; the checkout
-   success screen alone grants nothing).
+   webhook arrives (the app polls the Worker grant; the native SDK
+   success alone grants nothing).
 4. Subscribe twice for the same user: the second buy must be blocked
    ("already have an active subscription").
 5. Cancel from the app: premium must go OFF on relaunch
@@ -83,4 +90,7 @@ button honestly reports that payments are being set up.
    app's cancel) → `subscription.cancelled` webhook →
    relaunch the app → premium off, ads return.
 8. A failed test payment must NOT revoke premium (only `halted` does).
-9. Switch to live keys + a live Plan only after test passes.
+9. Restore re-verifies with Razorpay (`/reconcile`): cancel from the
+   dashboard, then Restore in the app → premium must stay off
+   (reconcile sees the cancelled status, not just the old grant).
+10. Switch to live keys + a live Plan only after test passes.

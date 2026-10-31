@@ -1,7 +1,6 @@
 import { addGroupMessage, getSetting, listBots, listConnections, listGroupMessages, listGroupThreads, listMcpServers, listMemory, listPlugins, listSkills } from './db';
 import { buildSystemPrompt } from './prompt';
 import { chatWithBot } from './providers';
-import { errorCode } from './errors';
 import { parseSkillCallout } from './skillCallout';
 import { parsePluginCallout, pluginPromptBlock } from './pluginCallout';
 import { mcpPromptBlock, parseMcpCallout } from './mcpCallout';
@@ -182,11 +181,12 @@ export async function runGroupMessage(
       // A user-cancelled turn saves nothing: no error note, and the
       // loop stops — bots that already replied keep their replies.
       if (signal?.aborted) break;
-      // A failed bot reply shows ONLY a number — never a sentence,
-      // never raw provider text. The bot's name is the message label.
+      // A failed bot reply shows the short plain-English error
+      // (user order 2026-10-31) — never a bare number. The bot's
+      // name is the message label.
       const note: GroupMessage = {
         id: newId(), threadId, botId: bot.id, role: 'system_note',
-        text: `Error ${errorCode(e)}`,
+        text: e instanceof Error ? e.message : 'Provider error. Try again shortly.',
         approvalState: null, createdAt: nowIso(),
       };
       await addGroupMessage(note);
