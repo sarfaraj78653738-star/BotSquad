@@ -1,5 +1,6 @@
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
-import { Linking, View } from 'react-native';
+import { Component } from 'react';
+import { Linking, ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -8,8 +9,39 @@ import { getGoogleUser } from '../src/lib/googleAuth';
 import { BOT_TEMPLATES, nowIso, newId } from '../src/lib/types';
 import { listBots, saveBot } from '../src/lib/db';
 import { DrawerProvider } from '../src/components/Drawer';
-import { PluginRunnerHost } from '../src/components/PluginRunnerHost';
+// PluginRunnerHost TEMPORARILY NOT MOUNTED (diagnostic, 2026-10-31):
+// the hidden root WebView is the newest never-device-tested native
+// surface in the crashing builds. run_plugin fails fast with
+// "not ready" while it is out; restore it (lazily) once launch is
+// proven on device. See also the gitDownload polyfill change.
 import { ThemeProvider, useTokens } from '../src/lib/tokens';
+
+// Startup error screen (diagnostic, 2026-10-31): if anything in the
+// render tree throws during launch, show the error as text instead
+// of a bare "keeps stopping" crash, so a screenshot reveals the
+// cause. It cannot catch native crashes or bundle-evaluation
+// throws (nothing renders then) — those still need a device log.
+class StartupErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+  render(): React.ReactNode {
+    const e = this.state.error;
+    if (e) {
+      return (
+        <View style={{ flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#ffffff' }}>
+          <ScrollView>
+            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#000000' }}>App failed to start</Text>
+            <Text style={{ marginTop: 12, color: '#000000' }}>{String((e as Error).message ?? e)}</Text>
+            <Text style={{ marginTop: 12, fontSize: 12, color: '#333333' }}>{String((e as Error).stack ?? '').slice(0, 2000)}</Text>
+          </ScrollView>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Status bar follows the effective theme: light icons on the dark
 // palette, dark icons on the light palette, so the time and system
@@ -113,18 +145,19 @@ export default function RootLayout() {
     })().catch(() => {});
   }, []);
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <ThemedStatusBar />
-        <DrawerProvider>
-          <ThemedSafeArea>
-            <DeepLinkHandler />
-            <AuthGate />
-            <PluginRunnerHost />
-            <Stack screenOptions={{ headerShown: false }} />
-          </ThemedSafeArea>
-        </DrawerProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <StartupErrorBoundary>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <ThemedStatusBar />
+          <DrawerProvider>
+            <ThemedSafeArea>
+              <DeepLinkHandler />
+              <AuthGate />
+              <Stack screenOptions={{ headerShown: false }} />
+            </ThemedSafeArea>
+          </DrawerProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </StartupErrorBoundary>
   );
 }

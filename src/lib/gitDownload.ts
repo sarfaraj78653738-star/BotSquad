@@ -1,4 +1,14 @@
-import 'react-native-get-random-values'; // Crypto polyfill, ONLY here: isomorphic-git (below) is the app's only Node-crypto user. It must NOT live in _layout.tsx — a broken polyfill at app root would kill app launch; here it can only affect repo downloads.
+// Crypto polyfill via expo-crypto (already installed, proven on
+// device). react-native-get-random-values v2 was REMOVED 2026-10-31:
+// it is a TurboModule-only package targeting RN >=0.81 while this
+// app runs RN 0.76.5, and it was the newest native module in the
+// crashing builds. isomorphic-git (below) is the app's only
+// Node-crypto user.
+import * as ExpoCrypto from 'expo-crypto';
+if (typeof (globalThis as any).crypto?.getRandomValues !== 'function') {
+  const g = (globalThis as any);
+  g.crypto = { ...(g.crypto ?? {}), getRandomValues: (arr: Uint8Array) => ExpoCrypto.getRandomValues(arr) };
+}
 import * as FileSystem from 'expo-file-system';
 import { Buffer } from 'buffer';
 import git from 'isomorphic-git';
