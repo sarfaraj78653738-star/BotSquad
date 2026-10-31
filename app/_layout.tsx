@@ -3,7 +3,7 @@
 import '../src/lib/processPolyfill';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { Component } from 'react';
-import { Linking, ScrollView, Text, View } from 'react-native';
+import { Linking, Modal, ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -12,11 +12,11 @@ import { getGoogleUser } from '../src/lib/googleAuth';
 import { BOT_TEMPLATES, nowIso, newId } from '../src/lib/types';
 import { listBots, saveBot } from '../src/lib/db';
 import { DrawerProvider } from '../src/components/Drawer';
-// PluginRunnerHost TEMPORARILY NOT MOUNTED (diagnostic, 2026-10-31):
-// the hidden root WebView is the newest never-device-tested native
-// surface in the crashing builds. run_plugin fails fast with
-// "not ready" while it is out; restore it (lazily) once launch is
-// proven on device. See also the gitDownload polyfill change.
+// PluginRunnerHost RESTORED 2026-10-31: launch + login are proven now,
+// and the launch crash's cause was the readable-stream shim, not this
+// hidden WebView — so run_plugin works again (it failed fast with
+// "not ready" while the host was out).
+import { PluginRunnerHost } from '../src/components/PluginRunnerHost';
 import { ThemeProvider, useTokens } from '../src/lib/tokens';
 
 // Startup error screen (diagnostic, 2026-10-31): if anything in the
@@ -109,6 +109,7 @@ function AuthGate() {
   const navState = useRootNavigationState();
   const [auth, setAuth] = useState<'loading' | 'authed' | 'guest'>('loading');
   const [checking, setChecking] = useState(true);
+  const [booted, setBooted] = useState(false);
   useEffect(() => {
     if (!navState?.key) return;
     let alive = true;
@@ -129,9 +130,19 @@ function AuthGate() {
     const seg = segments[0];
     if (auth === 'guest' && seg !== 'login' && seg !== 'legal') router.replace('/login');
     else if (auth === 'authed' && seg === 'login') router.replace('/');
+    else setBooted(true);
   }, [auth, checking, segments, router]);
-  if (auth !== 'loading') return null;
-  return <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: tokens.bg, zIndex: 10 }} />;
+  // Boot gate: a plain overlay View does NOT cover the navigator on
+  // Android, so guests saw Main Chat for 1-2s while the session check
+  // ran. A Modal renders above the navigator, and it stays up until
+  // the visible route already matches the auth state — so the first
+  // thing a guest ever sees is the login screen, never Main Chat.
+  if (booted) return null;
+  return (
+    <Modal visible animationType="none" transparent={false}>
+      <View style={{ flex: 1, backgroundColor: tokens.bg }} />
+    </Modal>
+  );
 }
 
 export default function RootLayout() {
@@ -157,6 +168,7 @@ export default function RootLayout() {
               <DeepLinkHandler />
               <AuthGate />
               <Stack screenOptions={{ headerShown: false }} />
+              <PluginRunnerHost />
             </ThemedSafeArea>
           </DrawerProvider>
         </ThemeProvider>
