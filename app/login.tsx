@@ -78,6 +78,8 @@ export default function LoginScreen() {
       const u = await completeGoogleSignIn(code, verifier, cid);
       setUser(u);
       setMsg('');
+      // The pending session is consumed (codes are single-use).
+      try { await setSetting('google_auth_pending', ''); } catch { /* best-effort */ }
       // Fill the Profile screen from the Google account (user order
       // 2026-10-31): only fields the user has not already filled,
       // so later manual edits are never overwritten. Then open
@@ -122,6 +124,45 @@ export default function LoginScreen() {
     void finishSignIn(code, verifier, clientId);
   }, [response, request, clientId, finishSignIn, language]);
 
+  // Completes sign-in from a Google redirect URL, however it arrived
+  // (Linking event or the app's launch URL). The session is validated
+  // against the PERSISTED pending session saved at sign-in time, not
+  // just the current request object — so it still works if the login
+  // screen remounted or the app process restarted while the browser
+  // was open (both lose the in-memory request, its state and its
+  // PKCE verifier; the persisted copy survives). Returns true when
+  // the URL was a Google redirect (handled or rejected with a
+  // message), false when it was some other link.
+  const completeFromRedirectUrl = useCallback(async (url: string): Promise<boolean> => {
+    if (!url.startsWith(GOOGLE_REDIRECT_URI)) return false;
+    const query = url.split('?')[1] ?? '';
+    const params = new URLSearchParams(query);
+    const err = params.get('error');
+    if (err) { setMsg(`Google sign-in error: ${err}`); return true; }
+    const code = params.get('code');
+    const state = params.get('state');
+    if (!code) return true;
+    let verifier: string | undefined;
+    let cid: string | undefined;
+    try {
+      const raw = await getSetting('google_auth_pending');
+      if (raw) {
+        const pending = JSON.parse(raw) as { state?: string; codeVerifier?: string; clientId?: string };
+        if (pending.state === state) { verifier = pending.codeVerifier; cid = pending.clientId; }
+      }
+    } catch { /* fall through to the live request */ }
+    if (!verifier) {
+      const req = requestRef.current;
+      if (req && state === req.state) { verifier = req.codeVerifier; cid = clientIdRef.current; }
+    }
+    if (!verifier || !cid) {
+      setMsg('Sign-in session did not match. Tap Continue with Google again.');
+      return true;
+    }
+    void finishSignIn(code, verifier, cid);
+    return true;
+  }, [finishSignIn]);
+
   // Backup completion path (2026-10-31): on Android the auth session
   // is a polyfill racing a Linking event against the app coming back
   // to the foreground; if the foreground wins, the session resolves
@@ -131,33 +172,36 @@ export default function LoginScreen() {
   // lost race can no longer strand the user on this screen.
   useEffect(() => {
     const sub = Linking.addEventListener('url', (event) => {
-      if (!event.url.startsWith(GOOGLE_REDIRECT_URI)) return;
-      const query = event.url.split('?')[1] ?? '';
-      const params = new URLSearchParams(query);
-      const err = params.get('error');
-      if (err) { setMsg(`Google sign-in error: ${err}`); return; }
-      const code = params.get('code');
-      const state = params.get('state');
-      const req = requestRef.current;
-      if (!code) return;
-      if (!req || state !== req.state) {
-        setMsg('Sign-in session did not match. Tap Continue with Google again.');
-        return;
-      }
-      const verifier = req.codeVerifier;
-      const cid = clientIdRef.current;
-      if (!verifier || !cid) {
-        setMsg('Sign-in session expired. Tap Continue with Google again.');
-        return;
-      }
-      void finishSignIn(code, verifier, cid);
+      void completeFromRedirectUrl(event.url);
     });
     return () => sub.remove();
-  }, [finishSignIn]);
+  }, [completeFromRedirectUrl]);
+
+  // Same redirect, delivered as the app's launch URL instead of an
+  // event: this happens when the app process (or its activity) was
+  // recreated while the browser was open. Without this check the
+  // redirect is silently lost and the user lands back on login.
+  useEffect(() => {
+    (async () => {
+      try {
+        const initial = await Linking.getInitialURL();
+        if (initial) await completeFromRedirectUrl(initial);
+      } catch { /* no launch URL */ }
+    })();
+  }, [completeFromRedirectUrl]);
 
   async function signIn() {
     if (!request || !clientId) return;
     setMsg('');
+    // Persist this session BEFORE opening the browser, so the
+    // redirect can still be completed if the screen remounts or the
+    // app restarts while the browser is open (the in-memory request
+    // would be lost, and with it the state + PKCE verifier).
+    try {
+      if (request.state && request.codeVerifier) {
+        await setSetting('google_auth_pending', JSON.stringify({ state: request.state, codeVerifier: request.codeVerifier, clientId }));
+      }
+    } catch { /* warm path still works without persistence */ }
     setBusy(true);
     try {
       await promptAsync();
