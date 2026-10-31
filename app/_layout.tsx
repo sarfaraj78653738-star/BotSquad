@@ -1,3 +1,6 @@
+// Must stay FIRST: fills process.version before any route module
+// (or browserify shim) evaluates. See processPolyfill.ts.
+import '../src/lib/processPolyfill';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { Component } from 'react';
 import { Linking, ScrollView, Text, View } from 'react-native';

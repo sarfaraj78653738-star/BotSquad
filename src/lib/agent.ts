@@ -1,6 +1,5 @@
 import { fetchPublicPageText } from './providers';
 import { deleteWorkspaceFile, listWorkspaceFiles, readWorkspaceFile, safeWorkspacePath, workspaceDir, writeWorkspaceFile } from './workspace';
-import { cloneGitHubRepo, parseGitHubRepo } from './gitDownload';
 import { runPluginCode } from './pluginRunner';
 import { listPlugins, listSkills, savePlugin, saveSkill } from './db';
 import { newId, nowIso } from './types';
@@ -281,6 +280,15 @@ export async function executeAgentTool(
       }
     }
     case 'download_repo': {
+      // Lazy require (same pattern as voice.ts): gitDownload pulls
+      // in isomorphic-git + browserify crypto shims whose
+      // require-time code throws on this phone's process shim
+      // (readable-stream 2.3.8 reads process.version.slice).
+      // A static import made EVERY Main Chat load crash at launch
+      // (2026-10-31) before any UI; requiring it only when a repo
+      // download actually runs keeps startup clean. (tsconfig
+      // forbids dynamic import() here, so require is used.)
+      const { cloneGitHubRepo, parseGitHubRepo } = require('./gitDownload');
       const parsed = parseGitHubRepo(argString(call.args, 'repo'));
       if (!parsed) return 'Error: download_repo needs a GitHub repo ("owner/name" or a github.com URL). Public repos only.';
       const rel = sectionPath(`repos/${parsed.owner}-${parsed.name}`);
@@ -296,6 +304,8 @@ export async function executeAgentTool(
       }
     }
     case 'run_plugin': {
+      // Lazy require for the same reason as download_repo (see above).
+      const { cloneGitHubRepo, parseGitHubRepo } = require('./gitDownload');
       const target = argString(call.args, 'plugin') || argString(call.args, 'file') || argString(call.args, 'repo');
       if (!target) return 'Error: run_plugin needs a plugin name, a github.com repo ("owner/name" or URL), or a workspace .js file.';
       // Resolve to a repo when possible: an installed plugin's repo
