@@ -4,8 +4,8 @@ import { capHistory, getUniversal } from './universal';
 
 export class ProviderError extends Error {
   code: string;
-  // HTTP status when one is known, so the UI can show a plain number
-  // (see src/lib/errors.ts) instead of any message text.
+  // HTTP status when one is known, kept for debugging — the shown
+  // text never includes it (short plain-English messages only).
   status?: number;
   constructor(code: string, message: string, status?: number) {
     super(message);
@@ -27,6 +27,40 @@ function cleanError(status: number): ProviderError {
 }
 
 const OPENAI_DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+
+// Repeated-error ladder (user order 2026-10-31): the same failure
+// code in a row escalates what the user sees. 1st: the short line.
+// 2nd: + "Try switching the model." (only where switching helps —
+// provider-side errors, not a bad key or no network). 3rd: + a
+// one-line alternative solution for that error. Any success resets.
+let lastErrorCode: string | null = null;
+let sameErrorCount = 0;
+
+function noteSuccess<T>(value: T): T {
+  lastErrorCode = null;
+  sameErrorCount = 0;
+  return value;
+}
+
+function withHint(e: ProviderError): ProviderError {
+  if (e.code === lastErrorCode) sameErrorCount += 1;
+  else { lastErrorCode = e.code; sameErrorCount = 1; }
+  let msg = e.message;
+  const switchHelps = e.code === 'PROVIDER_ERROR' || e.code === 'RATE_LIMIT' || e.code === 'BILLING';
+  if (sameErrorCount >= 2 && switchHelps) msg += ' Try switching the model.';
+  if (sameErrorCount >= 3) {
+    const alt =
+      e.code === 'PROVIDER_ERROR' ? 'Alternative: try a different provider in Model setup.' :
+      e.code === 'RATE_LIMIT' ? 'Alternative: wait a few minutes, or use a model with a higher limit.' :
+      e.code === 'BILLING' ? 'Alternative: top up credits, or switch to a free model.' :
+      e.code === 'INVALID_KEY' ? 'Alternative: copy the key again from your provider dashboard, or create a new key.' :
+      e.code === 'NETWORK' ? 'Alternative: check your connection, or restart the app.' :
+      null;
+    if (alt) msg += ` ${alt}`;
+  }
+  e.message = msg;
+  return e;
+}
 
 // Validate an OpenAI-compatible endpoint: https only, no query/fragment.
 // A non-https or credential-carrying URL must never receive an API key.
@@ -65,7 +99,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
       });
       if (!res.ok) throw cleanError(res.status);
       const data: any = await res.json();
-      return data.content?.map((c: any) => c.text ?? '').join('') || '(empty reply)';
+      return noteSuccess(data.content?.map((c: any) => c.text ?? '').join('') || '(empty reply)');
     }
     if (provider === 'gemini') {
       // SECURITY FIX 2026-10-28: the key used to travel in the URL query
@@ -80,7 +114,7 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
       });
       if (!res.ok) throw cleanError(res.status);
       const data: any = await res.json();
-      return data.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') || '(empty reply)';
+      return noteSuccess(data.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') || '(empty reply)');
     }
     // OpenAI-compatible: the endpoint is the universal one (validated,
     // https), defaulting to OpenAI. A key intended for another provider
@@ -96,15 +130,15 @@ export async function chatWithBot(_bot: Bot, systemPrompt: string, history: { ro
     });
     if (!res.ok) throw cleanError(res.status);
     const data: any = await res.json();
-    return data.choices?.[0]?.message?.content || '(empty reply)';
+    return noteSuccess(data.choices?.[0]?.message?.content || '(empty reply)');
   } catch (e) {
     // A user-cancelled request must stay recognisable as a cancel:
     // without this the NETWORK wrap below would turn it into a
     // provider failure and the UI would show an error banner for a
     // task the user stopped on purpose (bug 2026-10-30).
     if (signal?.aborted) throw e;
-    if (e instanceof ProviderError) throw e;
-    throw new ProviderError('NETWORK', 'No network or the provider could not be reached. Check your connection and try again.');
+    if (e instanceof ProviderError) throw withHint(e);
+    throw withHint(new ProviderError('NETWORK', 'No network or the provider could not be reached. Check your connection and try again.'));
   }
 }
 
