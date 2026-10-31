@@ -1,3 +1,4 @@
+import 'react-native-get-random-values'; // Crypto polyfill, ONLY here: isomorphic-git (below) is the app's only Node-crypto user. It must NOT live in _layout.tsx — a broken polyfill at app root would kill app launch; here it can only affect repo downloads.
 import * as FileSystem from 'expo-file-system';
 import { Buffer } from 'buffer';
 import git from 'isomorphic-git';
