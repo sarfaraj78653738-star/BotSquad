@@ -1,27 +1,38 @@
 // BotSquad Razorpay Worker (Cloudflare Workers, no dependencies).
 // This is the ONLY place that may touch Razorpay secrets. Env vars
 // (set with `wrangler secret put`, never in code or in the app):
-//   RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
+//   RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET,
+//   RAZORPAY_PLAN_ID (the dashboard Plan id — see below).
 // KV binding: GRANTS (see wrangler.toml).
 //
-// Price: $5 one time = 500 USD cents, fixed HERE. The app never sends
-// an amount — a client that could set its own price could pay $0.01
-// for premium.
+// MONTHLY SUBSCRIPTION (user order 2026-10-31, replaces the old
+// one-time $5 model): ₹199/month, INR. The price lives in the
+// Razorpay dashboard Plan, NOT here — create a Plan (₹199, monthly,
+// INR) in the dashboard and store its id as RAZORPAY_PLAN_ID. The app
+// never sends an amount: a client that could set its own price could
+// pay ₹1 for premium. A subscription's billing cycles (total_count)
+// is 1200 (Razorpay's documented example for a 30-year monthly plan),
+// i.e. effectively until the user cancels.
 //
 // Endpoints:
-//   POST /create-order { userId } -> { orderId, keyId, amount, currency }
-//     or { alreadyGranted: true } when the user already owns premium.
+//   POST /create-subscription { userId } -> { subscriptionId, keyId }
+//     or { alreadyGranted: true } when the user already has an active
+//     subscription.
+//   POST /cancel-subscription { userId } -> { ok: true } (cancels AT
+//     the end of the current billing period; the grant stays until the
+//     subscription.cancelled webhook fires) or { nothingToCancel: true }.
 //   POST /webhook — Razorpay calls this. The signature is verified with
-//     the webhook secret before anything is trusted. On a verified
-//     payment.captured, the grant is stored ONCE per payment id.
+//     the webhook secret before anything is trusted. Subscription
+//     status is the SOLE source of truth: activated/charged grant,
+//     cancelled/halted/paused/completed revoke. A payment.failed alone
+//     never revokes (Razorpay retries; halted revokes if it gives up).
+//     A refund of one month's charge also never revokes — the
+//     subscription stays active and the next charge still comes.
 //   GET  /grant?userId=... -> { granted: true|false }
 //
-// One-charge idempotency: the app reuses a pending order id, and this
-// Worker refuses a second grant for the same payment id even if
-// Razorpay retries the webhook.
-
-const PRICE_CENTS = 500;
-const CURRENCY = 'USD';
+// Double-subscription guards: the app reuses a pending subscription
+// id, and this Worker grants only for subscriptions it created
+// (pending/sub mapping + notes.userId).
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -76,26 +87,46 @@ export default {
       return json({ granted: !!grant });
     }
 
-    if (url.pathname === '/create-order' && request.method === 'POST') {
+    if (url.pathname === '/create-subscription' && request.method === 'POST') {
       const { userId } = await request.json().catch(() => ({}));
       if (!userId) return json({ error: 'userId required' }, 400);
+      if (!env.RAZORPAY_PLAN_ID) return json({ error: 'plan not configured' }, 500);
       const existing = await env.GRANTS.get(`grant:${userId}`);
       if (existing) return json({ alreadyGranted: true });
       const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
-      const res = await fetch('https://api.razorpay.com/v1/orders', {
+      const res = await fetch('https://api.razorpay.com/v1/subscriptions', {
         method: 'POST',
         headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: PRICE_CENTS,
-          currency: CURRENCY,
-          receipt: `botsquad_${userId}_${Date.now()}`,
+          plan_id: env.RAZORPAY_PLAN_ID,
+          total_count: 1200,
+          quantity: 1,
+          customer_notify: 1,
           notes: { userId },
         }),
       });
-      if (!res.ok) return json({ error: 'order failed' }, 502);
-      const order = await res.json();
-      await env.GRANTS.put(`pending:${order.id}`, userId);
-      return json({ orderId: order.id, keyId: env.RAZORPAY_KEY_ID, amount: PRICE_CENTS, currency: CURRENCY });
+      if (!res.ok) return json({ error: 'subscription failed' }, 502);
+      const sub = await res.json();
+      await env.GRANTS.put(`pending:${sub.id}`, userId);
+      return json({ subscriptionId: sub.id, keyId: env.RAZORPAY_KEY_ID });
+    }
+
+    if (url.pathname === '/cancel-subscription' && request.method === 'POST') {
+      const { userId } = await request.json().catch(() => ({}));
+      if (!userId) return json({ error: 'userId required' }, 400);
+      const grantRaw = await env.GRANTS.get(`grant:${userId}`);
+      if (!grantRaw) return json({ nothingToCancel: true });
+      let subscriptionId = null;
+      try { subscriptionId = JSON.parse(grantRaw).subscription_id || null; } catch { subscriptionId = null; }
+      if (!subscriptionId) return json({ nothingToCancel: true });
+      const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
+      const res = await fetch(`https://api.razorpay.com/v1/subscriptions/${subscriptionId}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+      });
+      if (!res.ok) return json({ error: 'cancel failed' }, 502);
+      return json({ ok: true });
     }
 
     if (url.pathname === '/webhook' && request.method === 'POST') {
@@ -110,44 +141,46 @@ export default {
       } catch {
         return new Response('bad json', { status: 400 });
       }
-      if (event.event === 'payment.captured') {
-        const payment = event.payload?.payment?.entity;
-        const paymentId = payment?.id;
-        const orderId = payment?.order_id;
-        if (paymentId && orderId) {
-          // Dedupe: a retried webhook for the same payment grants once.
-          const done = await env.GRANTS.get(`payment:${paymentId}`);
-          if (!done) {
-            const userId = await env.GRANTS.get(`pending:${orderId}`);
-            if (userId) {
-              await env.GRANTS.put(
-                `grant:${userId}`,
-                JSON.stringify({ payment_id: paymentId, order_id: orderId, at: new Date().toISOString() }),
-              );
-              await env.GRANTS.put(`payment:${paymentId}`, userId);
-              await env.GRANTS.delete(`pending:${orderId}`);
-            }
+      // Subscription lifecycle is the SOLE source of truth. The
+      // subscription id maps to a user via notes.userId (set at
+      // creation) or via the pending/sub KV mappings.
+      if (event.event === 'subscription.activated' || event.event === 'subscription.charged') {
+        const sub = event.payload?.subscription?.entity;
+        const subId = sub?.id;
+        if (subId) {
+          const userId = sub?.notes?.userId
+            || (await env.GRANTS.get(`pending:${subId}`))
+            || (await env.GRANTS.get(`sub:${subId}`));
+          if (userId) {
+            await env.GRANTS.put(
+              `grant:${userId}`,
+              JSON.stringify({ subscription_id: subId, status: sub?.status || event.event, at: new Date().toISOString() }),
+            );
+            await env.GRANTS.put(`sub:${subId}`, userId);
+            await env.GRANTS.delete(`pending:${subId}`);
           }
         }
       }
-      if (event.event === 'refund.processed') {
-        // Any refund of a granted payment revokes the grant (one-time
-        // product: partial or full, the user no longer owns it). The
-        // refund entity carries the original payment id, so the grant
-        // is found the same way the capture stored it. Only
-        // 'processed' revokes — 'created' is just initiated, money
-        // not yet returned. Signature was already verified above, so
-        // a forged refund cannot revoke someone else's premium.
-        const refund = event.payload?.refund?.entity;
-        const paymentId = refund?.payment_id;
-        if (paymentId) {
-          const userId = await env.GRANTS.get(`payment:${paymentId}`);
+      if (event.event === 'subscription.cancelled' || event.event === 'subscription.halted'
+        || event.event === 'subscription.paused' || event.event === 'subscription.completed') {
+        const sub = event.payload?.subscription?.entity;
+        const subId = sub?.id;
+        if (subId) {
+          const userId = sub?.notes?.userId
+            || (await env.GRANTS.get(`sub:${subId}`))
+            || (await env.GRANTS.get(`pending:${subId}`));
           if (userId) {
             await env.GRANTS.delete(`grant:${userId}`);
-            await env.GRANTS.delete(`payment:${paymentId}`);
+            await env.GRANTS.delete(`sub:${subId}`);
+            await env.GRANTS.delete(`pending:${subId}`);
           }
         }
       }
+      // payment.failed: deliberately ignored — Razorpay retries the
+      // charge, and the subscription stays active until it is halted,
+      // at which point subscription.halted revokes. A refund of one
+      // month's charge is likewise ignored: the subscription governs,
+      // not individual payments.
       return new Response('ok');
     }
 

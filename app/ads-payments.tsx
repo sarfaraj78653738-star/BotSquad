@@ -9,22 +9,27 @@ import { t } from '../src/lib/i18n';
 import { getGoogleUser } from '../src/lib/googleAuth';
 import {
   PREMIUM_PRICE_LABEL,
+  cancelSubscription,
   checkGrant,
-  createOrder,
+  createSubscription,
   isPremium,
   pollGrant,
-  setPendingOrder,
+  setPendingSubscription,
   setPremium,
   syncPremiumFromGrant,
-  type OrderInfo,
+  type SubscriptionInfo,
 } from '../src/lib/premium';
 
-// Ads & payments (user orders 2026-10-31): Remove Ads is $5, one time,
-// paid through Razorpay. Premium activates ONLY after the Cloudflare
-// Worker confirms a webhook-verified payment — the checkout success
-// screen alone never grants it. A buy button that grants premium with
-// no verified payment was deliberately removed on 2026-10-28 and must
-// never return. Standing rule: premium removes ads ONLY.
+// Ads & payments (user order 2026-10-31): Remove Ads is ₹199/month,
+// INR, a Razorpay subscription (UPI + card). Premium is active ONLY
+// WHILE the subscription is active, and ONLY after the Cloudflare
+// Worker confirms a webhook-verified subscription event — the
+// checkout success screen alone never grants it. A buy button that
+// grants premium with no verified payment was deliberately removed
+// on 2026-10-28 and must never return. Standing rule: premium removes
+// ads ONLY. Cancel ends the subscription at the end of the current
+// billing period (premium stays till then, then the cancelled webhook
+// revokes it).
 // Until the Razorpay key id + Worker URL are filled in (see
 // src/lib/premium.ts), the buy button honestly reports that payments
 // are being set up. This version still shows NO ads.
@@ -37,7 +42,7 @@ export default function AdsPaymentsScreen() {
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [msg, setMsg] = useState('');
-  const [checkout, setCheckout] = useState<{ order: OrderInfo; name: string; email: string } | null>(null);
+  const [checkout, setCheckout] = useState<{ sub: SubscriptionInfo; name: string; email: string } | null>(null);
 
   const refresh = useCallback(async () => {
     const owned = await isPremium();
@@ -52,7 +57,7 @@ export default function AdsPaymentsScreen() {
 
   async function buy() {
     if (await isPremium()) {
-      setMsg('You already own Remove Ads. No new charge.');
+      setMsg('You already have an active subscription. No new charge.');
       return;
     }
     setBusy(true);
@@ -64,17 +69,30 @@ export default function AdsPaymentsScreen() {
         setMsg('Premium is already active on your account.');
         return;
       }
-      const order = await createOrder();
-      if (order.alreadyGranted) {
+      const sub = await createSubscription();
+      if (sub.alreadyGranted) {
         await setPremium(true);
         setPremiumState(true);
         setMsg('Premium is already active on your account.');
         return;
       }
       const user = await getGoogleUser().catch(() => null);
-      setCheckout({ order, name: user?.name ?? '', email: user?.email ?? '' });
+      setCheckout({ sub, name: user?.name ?? '', email: user?.email ?? '' });
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Could not start the payment. Try again.');
+      setMsg(e instanceof Error ? e.message : 'Could not start the subscription. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel() {
+    setBusy(true);
+    setMsg('');
+    try {
+      await cancelSubscription();
+      setMsg('Subscription cancelled. It ends at the end of your current billing period — ads stay removed until then.');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Could not cancel the subscription. Try again.');
     } finally {
       setBusy(false);
     }
@@ -99,14 +117,14 @@ export default function AdsPaymentsScreen() {
     if (data?.type === 'success') {
       setCheckout(null);
       setVerifying(true);
-      setMsg('Verifying payment...');
+      setMsg('Verifying subscription...');
       const granted = await pollGrant();
       setVerifying(false);
       if (granted) {
         await setPremium(true);
-        await setPendingOrder(null);
+        await setPendingSubscription(null);
         setPremiumState(true);
-        setMsg('Premium active. Ads removed.');
+        setMsg('Subscription active. Ads removed.');
       } else {
         setMsg('Payment received, verification is still pending. Premium will activate automatically — reopen this screen to check.');
       }
@@ -119,7 +137,7 @@ export default function AdsPaymentsScreen() {
     try {
       const granted = await syncPremiumFromGrant();
       setPremiumState(granted);
-      setMsg(granted ? 'Premium restored.' : 'No purchase found for this account.');
+      setMsg(granted ? 'Subscription restored.' : 'No active subscription found for this account.');
     } finally {
       setBusy(false);
     }
@@ -147,16 +165,22 @@ export default function AdsPaymentsScreen() {
           <Text style={styles.sub}>• {t(language, 'premiumA')}</Text>
           <Text style={styles.sub}>• {t(language, 'premiumB')}</Text>
           <Text style={styles.sub}>• {t(language, 'premiumC')}</Text>
-          <Text style={styles.price}>Remove Ads — {PREMIUM_PRICE_LABEL}, one time</Text>
+          <Text style={styles.price}>Remove Ads — {PREMIUM_PRICE_LABEL}/month</Text>
+          <Text style={styles.sub}>Auto-renews every month (UPI AutoPay or card). Cancel anytime — it ends at the end of your current billing period.</Text>
           {premium ? (
-            <Text style={styles.sub}>Premium is active on this device.</Text>
+            <>
+              <Text style={styles.sub}>Subscription is active on this device.</Text>
+              <Pressable accessibilityLabel="Cancel subscription" onPress={cancel} disabled={busy || verifying} style={[styles.restoreButton, (busy || verifying) && styles.disabled]}>
+                <Text style={styles.restoreText}>Cancel subscription</Text>
+              </Pressable>
+            </>
           ) : (
-            <Pressable accessibilityLabel="Buy Remove Ads" onPress={buy} disabled={busy || verifying} style={[styles.buyButton, (busy || verifying) && styles.disabled]}>
-              <Text style={styles.buyText}>{verifying ? 'Verifying...' : `Buy — ${PREMIUM_PRICE_LABEL}`}</Text>
+            <Pressable accessibilityLabel="Subscribe to Remove Ads" onPress={buy} disabled={busy || verifying} style={[styles.buyButton, (busy || verifying) && styles.disabled]}>
+              <Text style={styles.buyText}>{verifying ? 'Verifying...' : `Subscribe — ${PREMIUM_PRICE_LABEL}/month`}</Text>
             </Pressable>
           )}
-          <Pressable accessibilityLabel="Restore purchase" onPress={restore} disabled={busy || verifying} style={[styles.restoreButton, (busy || verifying) && styles.disabled]}>
-            <Text style={styles.restoreText}>Restore purchase</Text>
+          <Pressable accessibilityLabel="Restore subscription" onPress={restore} disabled={busy || verifying} style={[styles.restoreButton, (busy || verifying) && styles.disabled]}>
+            <Text style={styles.restoreText}>Restore subscription</Text>
           </Pressable>
           {msg ? <Text style={styles.msg}>{msg}</Text> : null}
         </Card>
@@ -175,7 +199,7 @@ export default function AdsPaymentsScreen() {
           {checkout ? (
             <WebView
               originWhitelist={['*']}
-              source={{ html: checkoutHtml(checkout.order, checkout.name, checkout.email) }}
+              source={{ html: checkoutHtml(checkout.sub, checkout.name, checkout.email) }}
               onMessage={(e) => onCheckoutMessage(e.nativeEvent.data)}
             />
           ) : null}
@@ -186,22 +210,20 @@ export default function AdsPaymentsScreen() {
 }
 
 // Razorpay Checkout.js inside an in-app WebView. The page only opens
-// the checkout for the Worker-issued order id; it never decides the
-// price (the Worker fixed amount + currency when creating the order).
+// the checkout for the Worker-issued subscription id; it never
+// decides the price (the dashboard Plan fixes ₹199/month, INR).
 // '<' is escaped so a profile name can never break out of the script.
-function checkoutHtml(order: OrderInfo, name: string, email: string): string {
+function checkoutHtml(sub: SubscriptionInfo, name: string, email: string): string {
   const esc = (s: string) => JSON.stringify(s).replace(/</g, '\\u003c');
   return `<!DOCTYPE html><html><body><script src="https://checkout.razorpay.com/v1/checkout.js"></script><script>
   var options = {
-    key: ${esc(order.keyId)},
-    amount: ${order.amount},
-    currency: ${esc(order.currency)},
-    order_id: ${esc(order.orderId)},
+    key: ${esc(sub.keyId)},
+    subscription_id: ${esc(sub.subscriptionId)},
     name: 'BotSquad',
-    description: 'Remove Ads',
+    description: 'Remove Ads — ₹199/month',
     prefill: { name: ${esc(name)}, email: ${esc(email)} },
     theme: { color: '#111111' },
-    handler: function (r) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', payment_id: r.razorpay_payment_id, order_id: r.razorpay_order_id })); },
+    handler: function (r) { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', payment_id: r.razorpay_payment_id, subscription_id: r.razorpay_subscription_id })); },
     modal: { ondismiss: function () { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'dismissed' })); } }
   };
   var rzp = new Razorpay(options);

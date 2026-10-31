@@ -1,7 +1,13 @@
-// Premium (Remove Ads) — Razorpay, webhook-verified only (user orders
-// 2026-10-31: $5 one time, Razorpay gateway, payment counts as
-// successful ONLY when the Razorpay webhook confirms it, and a user
-// who retries payment is still charged only once).
+// Premium (Remove Ads) — Razorpay MONTHLY subscription, webhook-
+// verified only (user order 2026-10-31: ₹199/month, INR, UPI + card).
+// Premium is ACTIVE ONLY WHILE the subscription is active: the
+// Worker grants on subscription.activated/charged and revokes on
+// subscription.cancelled/halted/paused/completed. A one-time payment
+// model was replaced by this subscription model on 2026-10-31; the
+// old order + payment.captured + refund-revoke code is gone —
+// subscription status is now the SOLE source of truth (a refund of
+// one month's charge does not revoke an active subscription; the
+// next charge still comes, and cancel/halt revokes).
 //
 // SECURITY SHAPE (do not weaken):
 // • The app NEVER grants premium from a checkout callback, a client
@@ -9,29 +15,33 @@
 //   the Cloudflare Worker (server/razorpay-worker/), which sets a grant
 //   only after verifying the Razorpay webhook signature with the
 //   webhook secret (the secret never leaves the Worker).
-// • The app NEVER creates a Razorpay order itself: order creation needs
-//   the key secret, so it lives in the Worker too. The app only passes
-//   its Google user id; the Worker fixes amount (500) and currency (USD).
-// • One-charge idempotency, three layers:
-//   1. Buy is blocked when premium is already active (no new order).
-//   2. An unfinished order is reused (pending order id in settings)
-//      instead of creating a second order on retry.
-//   3. The Worker dedupes by Razorpay payment id: a repeated webhook
-//      for the same payment grants once.
+// • The app NEVER creates a Razorpay subscription itself: creation
+//   needs the key secret, so it lives in the Worker too. The app only
+//   passes its Google user id; the Worker uses the dashboard Plan
+//   (₹199/month, INR — create it in the Razorpay dashboard, store its
+//   id as the Worker's RAZORPAY_PLAN_ID env).
+// • Double-subscription guards, three layers:
+//   1. Buy is blocked when a subscription is already active.
+//   2. An unauthorised subscription is reused (pending subscription
+//      id in settings) instead of creating a second one on retry.
+//   3. The Worker grants only on a verified subscription.activated /
+//      charged webhook for a subscription it created.
 // FILL THESE IN when Razorpay + the Worker are ready. Until then the
 // buy button honestly reports that payments are being set up, and
 // premium can never be granted — there is no client-side grant path.
 import { getSetting, setSetting } from './db';
 import { getGoogleUser } from './googleAuth';
 
-export const PREMIUM_PRICE_LABEL = '$5';
-export const PREMIUM_PRICE_CENTS = 500;
-export const PREMIUM_CURRENCY = 'USD';
+// Display price. In paise for INR (the dashboard Plan, not this
+// number, fixes the actual charge).
+export const PREMIUM_PRICE_LABEL = '₹199';
+export const PREMIUM_PRICE_CENTS = 19900;
+export const PREMIUM_CURRENCY = 'INR';
 export const RAZORPAY_KEY_ID = '';
 export const PREMIUM_WORKER_URL = '';
 
 const PREMIUM_KEY = 'premium_ads_removed';
-const PENDING_ORDER_KEY = 'premium_pending_order';
+const PENDING_SUBSCRIPTION_KEY = 'premium_pending_subscription';
 
 export async function isPremium(): Promise<boolean> {
   try {
@@ -45,21 +55,21 @@ export async function setPremium(v: boolean): Promise<void> {
   await setSetting(PREMIUM_KEY, v ? '1' : '0');
 }
 
-async function getPendingOrder(): Promise<string | null> {
+async function getPendingSubscription(): Promise<string | null> {
   try {
-    const v = await getSetting(PENDING_ORDER_KEY);
+    const v = await getSetting(PENDING_SUBSCRIPTION_KEY);
     return v ? v : null;
   } catch {
     return null;
   }
 }
 
-export async function setPendingOrder(id: string | null): Promise<void> {
-  await setSetting(PENDING_ORDER_KEY, id ?? '');
+export async function setPendingSubscription(id: string | null): Promise<void> {
+  await setSetting(PENDING_SUBSCRIPTION_KEY, id ?? '');
 }
 
-export type OrderInfo = {
-  orderId: string;
+export type SubscriptionInfo = {
+  subscriptionId: string;
   keyId: string;
   amount: number;
   currency: string;
@@ -93,9 +103,9 @@ export async function checkGrant(): Promise<boolean> {
 }
 
 // Syncs the local premium flag BOTH ways from the Worker (the source
-// of truth): granted → on, positively not-granted → off (refund /
-// cancel revoke), unknown → leave unchanged (never revoke on a
-// network failure or Worker error).
+// of truth): granted → on, positively not-granted → off (subscription
+// cancelled / halted revoke), unknown → leave unchanged (never revoke
+// on a network failure or Worker error).
 export async function syncPremiumFromGrant(): Promise<boolean> {
   const status = await checkGrantStatus();
   if (status === 'granted') await setPremium(true);
@@ -103,30 +113,53 @@ export async function syncPremiumFromGrant(): Promise<boolean> {
   return status === 'granted';
 }
 
-// Returns a pending order for reuse when one exists (retry = same
-// order, no second charge), otherwise creates a fresh order via the
-// Worker. Throws when payments are not configured.
-export async function createOrder(): Promise<OrderInfo> {
+// Returns a pending subscription for reuse when one exists (retry =
+// same subscription, no second subscription), otherwise creates a
+// fresh subscription via the Worker. Throws when payments are not
+// configured. amount/currency here are DISPLAY ONLY — the dashboard
+// Plan fixes the actual charge (₹199/month, INR); Checkout takes the
+// subscription id, not an amount.
+export async function createSubscription(): Promise<SubscriptionInfo> {
   if (!PREMIUM_WORKER_URL || !RAZORPAY_KEY_ID) {
     throw new Error('Payments are being set up. Try again later.');
   }
   const user = await getGoogleUser().catch(() => null);
   if (!user) throw new Error('Sign in first.');
-  const pending = await getPendingOrder();
+  const pending = await getPendingSubscription();
   if (pending) {
-    return { orderId: pending, keyId: RAZORPAY_KEY_ID, amount: PREMIUM_PRICE_CENTS, currency: PREMIUM_CURRENCY, alreadyGranted: false };
+    return { subscriptionId: pending, keyId: RAZORPAY_KEY_ID, amount: PREMIUM_PRICE_CENTS, currency: PREMIUM_CURRENCY, alreadyGranted: false };
   }
-  const res = await fetch(`${PREMIUM_WORKER_URL}/create-order`, {
+  const res = await fetch(`${PREMIUM_WORKER_URL}/create-subscription`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId: user.sub }),
   });
-  if (!res.ok) throw new Error('Could not start the payment. Try again.');
-  const json = (await res.json().catch(() => null)) as { alreadyGranted?: boolean; orderId?: string; keyId?: string; amount?: number; currency?: string } | null;
-  if (json?.alreadyGranted) return { orderId: '', keyId: '', amount: 0, currency: '', alreadyGranted: true };
-  if (!json?.orderId) throw new Error('Could not start the payment. Try again.');
-  await setPendingOrder(json.orderId);
-  return { orderId: json.orderId, keyId: json.keyId ?? RAZORPAY_KEY_ID, amount: json.amount ?? PREMIUM_PRICE_CENTS, currency: json.currency ?? PREMIUM_CURRENCY, alreadyGranted: false };
+  if (!res.ok) throw new Error('Could not start the subscription. Try again.');
+  const json = (await res.json().catch(() => null)) as { alreadyGranted?: boolean; subscriptionId?: string; keyId?: string } | null;
+  if (json?.alreadyGranted) return { subscriptionId: '', keyId: '', amount: 0, currency: '', alreadyGranted: true };
+  if (!json?.subscriptionId) throw new Error('Could not start the subscription. Try again.');
+  await setPendingSubscription(json.subscriptionId);
+  return { subscriptionId: json.subscriptionId, keyId: json.keyId ?? RAZORPAY_KEY_ID, amount: PREMIUM_PRICE_CENTS, currency: PREMIUM_CURRENCY, alreadyGranted: false };
+}
+
+// Cancels the active subscription AT THE END of the current billing
+// period (cancel_at_cycle_end): premium stays on until the paid month
+// ends, then the subscription.cancelled webhook revokes it. Throws
+// when there is no active subscription or payments are not configured.
+export async function cancelSubscription(): Promise<void> {
+  if (!PREMIUM_WORKER_URL) {
+    throw new Error('Payments are being set up. Try again later.');
+  }
+  const user = await getGoogleUser().catch(() => null);
+  if (!user) throw new Error('Sign in first.');
+  const res = await fetch(`${PREMIUM_WORKER_URL}/cancel-subscription`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: user.sub }),
+  });
+  if (!res.ok) throw new Error('Could not cancel the subscription. Try again.');
+  const json = (await res.json().catch(() => null)) as { nothingToCancel?: boolean } | null;
+  if (json?.nothingToCancel) throw new Error('No active subscription found for this account.');
 }
 
 // Polls the Worker grant (webhook arrival can lag the checkout success

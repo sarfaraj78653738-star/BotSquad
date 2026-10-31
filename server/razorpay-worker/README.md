@@ -16,6 +16,8 @@ wrangler kv namespace create GRANTS
 wrangler secret put RAZORPAY_KEY_ID
 wrangler secret put RAZORPAY_KEY_SECRET
 wrangler secret put RAZORPAY_WEBHOOK_SECRET
+wrangler secret put RAZORPAY_PLAN_ID
+# RAZORPAY_PLAN_ID comes from step 4a (the dashboard Plan id).
 ```
 
 ## 3. Deploy
@@ -27,9 +29,23 @@ wrangler deploy
 
 ## 4. Razorpay dashboard
 
+### 4a. Create the Plan (do this first — the Worker needs its id)
+
+Subscriptions > Plans > Create Plan:
+- Name: `BotSquad Remove Ads`
+- Amount: `199`, Currency: `INR`
+- Interval: monthly (period: 1 month)
+- Copy the Plan id (`plan_...`) into the `RAZORPAY_PLAN_ID` secret
+  (step 2). The Plan fixes the price — the app never sends an amount.
+
+### 4b. Webhook
+
 Settings > Webhooks > Add webhook:
 - URL: `<Worker URL>/webhook`
-- Events: `payment.captured` only
+- Events: `subscription.activated`, `subscription.charged`,
+  `subscription.cancelled`, `subscription.halted`,
+  `subscription.paused`, `subscription.completed`
+  (NOT `payment.captured` anymore — subscription status governs)
 - Secret: the same value you set as RAZORPAY_WEBHOOK_SECRET
 
 ## 5. Wire the app
@@ -43,11 +59,18 @@ button honestly reports that payments are being set up.
 
 ## 6. Test (Razorpay test mode first)
 
-1. Use Razorpay test keys in the Worker secrets.
-2. Buy from the app, pay with a test card.
-3. Premium must activate only after the webhook arrives (the app
-   polls the Worker grant; the checkout success screen alone grants
-   nothing).
-4. Pay twice for the same user: the second buy must be blocked
-   ("already own"), and a retried webhook must not double-grant.
-5. Switch to live keys only after test passes.
+1. Use Razorpay test keys in the Worker secrets, and a test-mode Plan.
+2. Subscribe from the app, pay with a test card (or test UPI).
+3. Premium must activate only after the `subscription.activated`
+   webhook arrives (the app polls the Worker grant; the checkout
+   success screen alone grants nothing).
+4. Subscribe twice for the same user: the second buy must be blocked
+   ("already have an active subscription").
+5. Cancel from the app: premium must STAY on (cancel is at the end
+   of the billing period — the paid month continues).
+6. To test revoke without waiting a month: cancel the test
+   subscription immediately from the Razorpay dashboard (not the
+   app's cycle-end cancel) → `subscription.cancelled` webhook →
+   relaunch the app → premium off, ads return.
+7. A failed test payment must NOT revoke premium (only `halted` does).
+8. Switch to live keys + a live Plan only after test passes.
