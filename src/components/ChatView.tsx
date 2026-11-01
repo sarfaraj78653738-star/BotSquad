@@ -15,7 +15,7 @@ import { saveArtifactFromReply } from '../lib/projects';
 import { buildTranscript, exportChatZip } from '../lib/chatExport';
 import { linkChatToProject } from '../lib/projects';
 import { addChatToHome, shortcutUri } from '../lib/shortcut';
-import { AGENT_TOOLS_PROMPT, BOT_FILE_TOOLS_PROMPT, FILE_TOOL_NAMES, executeAgentTool, parseToolCalls, stripToolBlocks } from '../lib/agent';
+import { AGENT_TOOLS_PROMPT, BOT_FILE_TOOLS_PROMPT, FILE_TOOL_NAMES, executeAgentTool, normalizeDotsCalls, parseToolCalls, sanitizeHistoryForModel, stripToolBlocks } from '../lib/agent';
 import { connectedServicesPrompt } from '../lib/serviceTools';
 import { buildCrossChatDigest } from '../lib/crossChat';
 import { parseSkillCallout } from '../lib/skillCallout';
@@ -371,7 +371,12 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
       const pluginBlock = pluginCallout.plugin ? pluginPromptBlock(pluginCallout.plugin) : '';
       const pluginEffectiveText = pluginCallout.plugin ? pluginCallout.cleanText : connEffectiveText;
       const system = buildSystemPrompt(bot, memory, others, enabledSkills, profilePrefs, effectiveConns) + mcpBlock + pluginBlock;
-      const history = next.slice(-10).map((m) => ({ role: m.role, text: m.text }));
+      // Sanitize history (fix 2026-11-01): old-build stored replies may
+      // hold raw dots-format tool blocks, and a new model imitates the
+      // format it sees in history. Converting them to fenced blocks
+      // keeps the environment context while showing only the right
+      // format, so the new model does not repeat the old mistake.
+      const history = sanitizeHistoryForModel(next.slice(-10).map((m) => ({ role: m.role, text: m.text })));
       // Main Chat is an agent, not just a chatbot: it knows the other
       // threads' recent context, and it can work with workspace files
       // and public web pages in a multi-step loop. A plain question
@@ -406,7 +411,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
             actionsTaken.push(target ? `${call.name} ${target}` : call.name);
           }
           for (const call of calls.slice(10)) results.push(`[Tool ${call.name} result]\nError: too many tool calls in one step (max 10 per step).`);
-          loopHistory.push({ role: 'assistant', text: reply });
+          loopHistory.push({ role: 'assistant', text: normalizeDotsCalls(reply) });
           loopHistory.push({ role: 'user', text: results.join('\n\n') });
           if (step === 7) break;
           reply = await chatWithBot(bot, systemFull, [...history, ...loopHistory], 'Continue with the task. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.', signal);
@@ -473,7 +478,7 @@ export function ChatView({ botId, universal, universalChatId, fresh, threadId, t
               results.push(`[Tool ${call.name} result]\n${result}`);
             }
             for (const call of calls.slice(10)) results.push(`[Tool ${call.name} result]\nError: too many tool calls in one step (max 10 per step).`);
-            loopHistory.push({ role: 'assistant', text: reply });
+            loopHistory.push({ role: 'assistant', text: normalizeDotsCalls(reply) });
             loopHistory.push({ role: 'user', text: results.join('\n\n') });
             if (step === 7) break;
             reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.', signal);

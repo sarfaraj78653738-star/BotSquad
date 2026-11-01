@@ -115,7 +115,7 @@ function extractBalancedJson(text: string, start: number): { json: string; end: 
 // is wrapped as {name, args}. A malformed dots block still converts
 // (parse ignores it, strip removes it), exactly like a malformed
 // fenced block — raw syntax is never shown.
-function normalizeDotsCalls(reply: string): string {
+export function normalizeDotsCalls(reply: string): string {
   let out = '';
   let rest = reply;
   for (;;) {
@@ -152,6 +152,22 @@ function normalizeDotsCalls(reply: string): string {
     rest = tail;
   }
   return out;
+}
+
+// History sanitizer (user order 2026-11-01): when a NEW model takes
+// over an OLD chat, it must still know the environment (the history
+// stays) but must NOT repeat the old format mistake. Old-build stored
+// replies contain raw <dots_function_call> blocks, and a model imitates
+// the tool format it sees in history — that is how a new model ends up
+// writing dots format too. Converting dots blocks in history into the
+// correct fenced blocks keeps the information (which tools ran, with
+// what args) while demonstrating only the right format, so the new
+// model imitates fenced blocks instead. Applied to the history sent to
+// the model in ChatView (single chats) and group.ts (group chats), and
+// to each loop step's assistant turn, so the format example the model
+// sees is always the correct one.
+export function sanitizeHistoryForModel(history: { role: string; text: string }[]): { role: string; text: string }[] {
+  return history.map((m) => ({ ...m, text: normalizeDotsCalls(m.text) }));
 }
 
 export function parseToolCalls(reply: string): AgentToolCall[] {

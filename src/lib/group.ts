@@ -6,7 +6,7 @@ import { parsePluginCallout, pluginPromptBlock } from './pluginCallout';
 import { mcpPromptBlock, parseMcpCallout } from './mcpCallout';
 import { parseConnectionCallout } from './connectionCallout';
 import { listMcpTools } from './mcp';
-import { BOT_FILE_TOOLS_PROMPT, FILE_TOOL_NAMES, executeAgentTool, parseToolCalls, stripToolBlocks } from './agent';
+import { BOT_FILE_TOOLS_PROMPT, FILE_TOOL_NAMES, executeAgentTool, normalizeDotsCalls, parseToolCalls, sanitizeHistoryForModel, stripToolBlocks } from './agent';
 import { Bot, GroupMessage, newId, nowIso } from './types';
 
 // Group chat runner: each selected bot replies IN TURN, in the order the
@@ -66,10 +66,15 @@ export async function runGroupMessage(
   // History for each bot: last 10 turns, assistant turns labelled by bot so
   // a bot does not mistake another bot's reply for its own.
   const botNameById = new Map(allBots.map((b) => [b.id, b.name]));
-  const history = prior.slice(-10).map((m) => ({
+  // Sanitize history (fix 2026-11-01, same as ChatView): old-build
+  // stored replies may hold raw dots-format tool blocks, and a new
+  // model imitates the format it sees in history. Converting them to
+  // fenced blocks keeps the environment context while showing only
+  // the right format.
+  const history = sanitizeHistoryForModel(prior.slice(-10).map((m) => ({
     role: m.role,
     text: m.role === 'assistant' && m.botId ? `${botNameById.get(m.botId) ?? 'Bot'}: ${m.text}` : m.text,
-  }));
+  })));
 
   const profilePrefs = (await getSetting('profile_preferences')) ?? '';
   const allConns = await listConnections().catch(() => []);
@@ -169,7 +174,7 @@ export async function runGroupMessage(
             results.push(`[Tool ${call.name} result]\n${result}`);
           }
           for (const call of calls.slice(10)) results.push(`[Tool ${call.name} result]\nError: too many tool calls in one step (max 10 per step).`);
-          loopHistory.push({ role: 'assistant', text: reply });
+          loopHistory.push({ role: 'assistant', text: normalizeDotsCalls(reply) });
           loopHistory.push({ role: 'user', text: results.join('\n\n') });
           if (step === 7) break;
           reply = await chatWithBot(bot, system + botToolsPrompt, [...history, ...loopHistory], 'Continue. If you need another tool, emit one tool block; otherwise give your final reply with no tool block.', signal);
