@@ -42,8 +42,8 @@ import { getGoogleIdToken, getGoogleUser } from './googleAuth';
 export const PREMIUM_PRICE_LABEL = '₹199';
 export const PREMIUM_PRICE_CENTS = 19900;
 export const PREMIUM_CURRENCY = 'INR';
-export const RAZORPAY_KEY_ID = '';
-export const PREMIUM_WORKER_URL = '';
+export const RAZORPAY_KEY_ID = 'rzp_test_TurNOsdhClFFL5';
+export const PREMIUM_WORKER_URL = 'https://botsquad-razorpay.botsquad-app.workers.dev';
 
 const PREMIUM_KEY = 'premium_ads_removed';
 const PENDING_SUBSCRIPTION_KEY = 'premium_pending_subscription';
