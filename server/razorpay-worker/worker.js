@@ -280,7 +280,15 @@ export default {
           notes: { userId },
         }),
       });
-      if (!res.ok) return json({ error: 'subscription failed' }, 502);
+      if (!res.ok) {
+        // Test-phase transparency (2026-11-01): return Razorpay's own
+        // reason so a failed subscribe names its cause instead of
+        // hiding behind one generic line. The app shows the detail
+        // after the generic prefix; tighten before launch if needed.
+        const err = await res.json().catch(() => null);
+        const detail = err?.error?.description || err?.error?.code || `Razorpay ${res.status}`;
+        return json({ error: 'subscription failed', detail }, 502);
+      }
       const sub = await res.json();
       await env.GRANTS.put(`pending:${sub.id}`, userId);
       return json({ subscriptionId: sub.id, keyId: env.RAZORPAY_KEY_ID, amount: planAmount, currency: planCurrency });

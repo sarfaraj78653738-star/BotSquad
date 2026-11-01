@@ -52,14 +52,14 @@ const PENDING_SUBSCRIPTION_KEY = 'premium_pending_subscription';
 // plain-English line, so a failed subscribe names its cause instead
 // of hiding behind one generic message. Unknown codes fall back to
 // the original generic line.
-function mapWorkerError(code?: string): string {
+function mapWorkerError(code?: string, detail?: string): string {
   switch (code) {
     case 'unauthorized': return 'Sign in again.';
     case 'rate limited': return 'Too many tries. Try again in a minute.';
     case 'plan not configured': return 'Payment plan is not set up yet. Try again later.';
     case 'plan check failed': return 'Could not reach Razorpay. Try again.';
     case 'plan mismatch': return 'The payment plan does not match. Check the dashboard Plan.';
-    case 'subscription failed': return 'Could not start the subscription. Try again.';
+    case 'subscription failed': return detail ? `Could not start the subscription. ${detail}` : 'Could not start the subscription. Try again.';
     default: return 'Could not start the subscription. Try again.';
   }
 }
@@ -173,9 +173,11 @@ export async function createSubscription(): Promise<SubscriptionInfo> {
     // Surface the Worker's own error instead of one generic line
     // (user order 2026-11-01 — "Could not start" hid the cause, so a
     // failed test could not be diagnosed). Plain words only, no
-    // status numbers, per the error-language rule.
-    const errBody = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(mapWorkerError(errBody?.error));
+    // status numbers, per the error-language rule. The Worker
+    // 'subscription failed' detail is Razorpay's own plain-English
+    // reason, shown so the test names its cause.
+    const errBody = (await res.json().catch(() => null)) as { error?: string; detail?: string } | null;
+    throw new Error(mapWorkerError(errBody?.error, errBody?.detail));
   }
   const json = (await res.json().catch(() => null)) as { alreadyGranted?: boolean; subscriptionId?: string; keyId?: string; amount?: number; currency?: string } | null;
   if (json?.alreadyGranted) return { subscriptionId: '', keyId: '', amount: 0, currency: '', alreadyGranted: true };
