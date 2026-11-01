@@ -172,7 +172,7 @@ const rateBuckets = new Map();
 function rateOk(callerSub, endpoint) {
   const now = Date.now();
   for (const [k, v] of rateBuckets) if (now - v.start > 60000) rateBuckets.delete(k);
-  const key = `${sub}:${endpoint}`;
+  const key = `${callerSub}:${endpoint}`;
   const b = rateBuckets.get(key) || { start: now, count: 0 };
   if (now - b.start > 60000) { b.start = now; b.count = 0; }
   b.count += 1;
