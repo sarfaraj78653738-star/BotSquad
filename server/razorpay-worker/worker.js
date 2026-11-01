@@ -242,7 +242,7 @@ export default {
       const userId = url.searchParams.get('userId');
       if (!userId) return json({ granted: false }, 400);
       const callerSub = await authedSub(request, userId);
-      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!callerSub) return json({ error: 'unauthorized' }, 401);
       if (!rateOk(callerSub, 'grant')) return json({ error: 'rate limited' }, 429);
       const grant = await env.GRANTS.get(`grant:${userId}`);
       return json({ granted: !!grant });
@@ -252,7 +252,7 @@ export default {
       const { userId } = await request.json().catch(() => ({}));
       if (!userId) return json({ error: 'userId required' }, 400);
       const callerSub = await authedSub(request, userId);
-      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!callerSub) return json({ error: 'unauthorized' }, 401);
       if (!rateOk(callerSub, 'create-subscription')) return json({ error: 'rate limited' }, 429);
       if (!env.RAZORPAY_PLAN_ID) return json({ error: 'plan not configured' }, 500);
       const existing = await env.GRANTS.get(`grant:${userId}`);
@@ -298,7 +298,7 @@ export default {
       const { userId } = await request.json().catch(() => ({}));
       if (!userId) return json({ error: 'userId required' }, 400);
       const callerSub = await authedSub(request, userId);
-      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!callerSub) return json({ error: 'unauthorized' }, 401);
       if (!rateOk(callerSub, 'cancel-subscription')) return json({ error: 'rate limited' }, 429);
       const grantRaw = await env.GRANTS.get(`grant:${userId}`);
       if (!grantRaw) return json({ nothingToCancel: true });
@@ -325,7 +325,7 @@ export default {
       const { userId, pendingSubscriptionId } = await request.json().catch(() => ({}));
       if (!userId) return json({ error: 'userId required' }, 400);
       const callerSub = await authedSub(request, userId);
-      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!callerSub) return json({ error: 'unauthorized' }, 401);
       if (!rateOk(callerSub, 'reconcile')) return json({ error: 'rate limited' }, 429);
       const auth = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`);
       const candidates = [];
@@ -383,7 +383,7 @@ export default {
     // Fail closed (502) — the app falls back to its hardcoded label.
     if (url.pathname === '/plan' && request.method === 'GET') {
       const callerSub = await authedSub(request);
-      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!callerSub) return json({ error: 'unauthorized' }, 401);
       if (!rateOk(callerSub, 'plan')) return json({ error: 'rate limited' }, 429);
       if (!env.RAZORPAY_PLAN_ID) return json({ error: 'plan not configured' }, 500);
       const plan = await getPlanCached(env);
@@ -401,7 +401,7 @@ export default {
       const userId = url.searchParams.get('userId');
       if (!userId) return json({ error: 'userId required' }, 400);
       const callerSub = await authedSub(request, userId);
-      if (!sub) return json({ error: 'unauthorized' }, 401);
+      if (!callerSub) return json({ error: 'unauthorized' }, 401);
       if (!rateOk(callerSub, 'subscription-status')) return json({ error: 'rate limited' }, 429);
       const grantRaw = await env.GRANTS.get(`grant:${userId}`);
       let subscriptionId = null;
