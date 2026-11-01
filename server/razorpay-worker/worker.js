@@ -24,8 +24,11 @@
 // INR) in the dashboard and store its id as RAZORPAY_PLAN_ID. The app
 // never sends an amount: a client that could set its own price could
 // pay ₹1 for premium. A subscription's billing cycles (total_count)
-// is 1200 (Razorpay's documented example for a 30-year monthly plan),
-// i.e. effectively until the user cancels.
+// is 120 (10 years, monthly). 1200 was tried first and Razorpay
+// rejected the payment at authorization: its end_time must lie
+// between 2000-01-01 and 2120-12-31, but 1200 monthly cycles from
+// now end in 2126. 120 cycles end ~2036, safely inside. The user
+// can still cancel anytime, and re-subscribe after 10 years.
 //
 // Endpoints:
 //   POST /create-subscription { userId } -> { subscriptionId, keyId }
@@ -274,7 +277,7 @@ export default {
         headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plan_id: env.RAZORPAY_PLAN_ID,
-          total_count: 1200,
+          total_count: 120,
           quantity: 1,
           customer_notify: 1,
           notes: { userId },

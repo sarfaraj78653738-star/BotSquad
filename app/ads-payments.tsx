@@ -110,8 +110,10 @@ export default function AdsPaymentsScreen() {
           theme: { color: '#111111' },
         });
       } catch (e) {
-        const desc = (e as { description?: string })?.description;
-        setMsg(desc || 'Payment failed. No money was taken.');
+        // The native SDK's description is Razorpay's raw error JSON
+        // (code, step, metadata) — never show it verbatim. The
+        // checkout popup itself already shows Razorpay's own reason.
+        setMsg('Payment could not be completed. No money was taken.');
         return;
       }
       setVerifying(true);
