@@ -48,6 +48,22 @@ export const PREMIUM_WORKER_URL = 'https://botsquad-razorpay.botsquad-app.worker
 const PREMIUM_KEY = 'premium_ads_removed';
 const PENDING_SUBSCRIPTION_KEY = 'premium_pending_subscription';
 
+// Maps the Worker /create-subscription { error } value to a distinct
+// plain-English line, so a failed subscribe names its cause instead
+// of hiding behind one generic message. Unknown codes fall back to
+// the original generic line.
+function mapWorkerError(code?: string): string {
+  switch (code) {
+    case 'unauthorized': return 'Sign in again.';
+    case 'rate limited': return 'Too many tries. Try again in a minute.';
+    case 'plan not configured': return 'Payment plan is not set up yet. Try again later.';
+    case 'plan check failed': return 'Could not reach Razorpay. Try again.';
+    case 'plan mismatch': return 'The payment plan does not match. Check the dashboard Plan.';
+    case 'subscription failed': return 'Could not start the subscription. Try again.';
+    default: return 'Could not start the subscription. Try again.';
+  }
+}
+
 // Authorization for Worker calls: the stored Google ID token as a
 // Bearer token. The Worker verifies it (RS256/JWKS, issuer, audience,
 // expiry, sub match) before acting. Returns null when no token is
@@ -153,7 +169,14 @@ export async function createSubscription(): Promise<SubscriptionInfo> {
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ userId: user.sub }),
   });
-  if (!res.ok) throw new Error('Could not start the subscription. Try again.');
+  if (!res.ok) {
+    // Surface the Worker's own error instead of one generic line
+    // (user order 2026-11-01 — "Could not start" hid the cause, so a
+    // failed test could not be diagnosed). Plain words only, no
+    // status numbers, per the error-language rule.
+    const errBody = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(mapWorkerError(errBody?.error));
+  }
   const json = (await res.json().catch(() => null)) as { alreadyGranted?: boolean; subscriptionId?: string; keyId?: string; amount?: number; currency?: string } | null;
   if (json?.alreadyGranted) return { subscriptionId: '', keyId: '', amount: 0, currency: '', alreadyGranted: true };
   if (!json?.subscriptionId) throw new Error('Could not start the subscription. Try again.');

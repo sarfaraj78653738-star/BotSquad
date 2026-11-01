@@ -10,6 +10,18 @@ import { useTokens } from '../src/lib/tokens';
 // not yet agreed sees only this screen (and /legal). Age is checked
 // from a birthdate the user types; the birthdate itself is never
 // stored — only the fact of verification. Decline signs out.
+// Auto-format the typed birthdate as DD/MM/YYYY: digits only, a "/"
+// after the day and after the month (user order 2026-11-01 — typing
+// 09092003 showed no slashes). The birthdate is still never stored;
+// this only formats the typed text. ageFromDob already parses the
+// slashed form.
+function formatDob(input: string): string {
+  const digits = input.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
 export default function AgreeScreen() {
   const tokens = useTokens();
   const router = useRouter();
@@ -49,7 +61,7 @@ export default function AgreeScreen() {
         <Text style={styles.title}>Before you start</Text>
         <Text style={styles.sub}>BotSquad is for users aged 18 and over. Confirm your age and agree to the terms to continue.</Text>
         <Card>
-          <Field label="Date of birth" value={dob} onChangeText={(t) => { setDob(t); setError(''); }} placeholder="DD/MM/YYYY" />
+          <Field label="Date of birth" value={dob} onChangeText={(t) => { setDob(formatDob(t)); setError(''); }} placeholder="DD/MM/YYYY" />
           <Text style={styles.note}>Your birthdate is only used to check your age and is not stored.</Text>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={{ height: 12 }} />
