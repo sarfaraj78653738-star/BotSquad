@@ -688,6 +688,7 @@ const CHAT_STRINGS: Record<Language, Record<string, string>> = {
     googleClientId: 'Google Client ID', saveClientId: 'Save Client ID', pasteFirst: 'Paste the Client ID first.',
     signInFailed: 'Google sign-in failed.', couldNotOpenSignIn: 'Could not open Google sign-in. Try again.',
     agreePrefix: 'By continuing, you agree to BotSquad\'s', andWord: 'and', agreeSuffix: '.',
+    agreeCheckboxPrefix: 'I agree to the', agreeCheckedPrefix: 'By checking the box above, you agree to BotSquad\'s',
     pickAvatar: 'Pick the avatar for Main Chat.',
     createBotTitle: 'Create a bot', editWord: 'Edit', oneTask: 'One task = its personality.',
     avatarTitle: 'Avatar — pick one for this bot', nameLabel: 'Name', roleLabel: 'Role',

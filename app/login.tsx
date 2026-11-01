@@ -22,6 +22,11 @@ import { t } from '../src/lib/i18n';
 // opens in the app via Play Services — no browser, no redirect, no
 // client-ID paste. The old browser/PKCE flow was abandoned after
 // four builds failed to return from the browser to the app.
+// Since 2026-11-01 (user order): a terms checkbox gates the Google
+// button — it stays disabled until the user checks "I agree to the
+// Terms of Use and Privacy Policy". The legal line below the button
+// is worded according to the checkbox (not the old "by continuing"
+// implication).
 const SUNNY = AVATAR_VARIANTS.find((v) => v.id === 'sunny') ?? AVATAR_VARIANTS[0];
 
 export default function LoginScreen() {
@@ -32,6 +37,7 @@ export default function LoginScreen() {
   const [user, setUser] = useState<GoogleUser | null>(null);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -40,6 +46,7 @@ export default function LoginScreen() {
   }, []);
 
   async function signIn() {
+    if (!agreed) return; // checkbox gate: no sign-in before agreement
     setMsg('');
     setBusy(true);
     try {
@@ -104,18 +111,31 @@ export default function LoginScreen() {
             </Pressable>
           </>
         ) : (
-          <Pressable onPress={() => { void signIn(); }} disabled={busy} style={styles.googleButton}>
-            <View style={styles.gMark}><Text style={styles.gLetter}>G</Text></View>
-            <Text style={styles.googleButtonText}>{busy ? t(language, 'signingIn') : t(language, 'continueGoogle')}</Text>
-          </Pressable>
+          <>
+            <Pressable onPress={() => { void signIn(); }} disabled={busy || !agreed} style={[styles.googleButton, (busy || !agreed) && styles.disabledButton]}>
+              <View style={styles.gMark}><Text style={styles.gLetter}>G</Text></View>
+              <Text style={styles.googleButtonText}>{busy ? t(language, 'signingIn') : t(language, 'continueGoogle')}</Text>
+            </Pressable>
+            <Pressable onPress={() => setAgreed(!agreed)} disabled={busy} accessibilityRole="checkbox" accessibilityState={{ checked: agreed }} accessibilityLabel="Agree to Terms of Use and Privacy Policy" style={styles.checkboxRow}>
+              <View style={[styles.checkboxBox, agreed && styles.checkboxChecked]}>
+                {agreed ? <Feather name="check" size={16} color={tokens.onAccent} /> : null}
+              </View>
+              <Text style={styles.checkboxText}>
+                {t(language, 'agreeCheckboxPrefix')}{' '}
+                <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } } as never)}>{t(language, 'legalTerms')}</Text>
+                {' '}{t(language, 'andWord')}{' '}
+                <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } } as never)}>{t(language, 'legalPrivacy')}</Text>
+              </Text>
+            </Pressable>
+            <Text style={styles.legal}>
+              {t(language, 'agreeCheckedPrefix')}{' '}
+              <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } } as never)}>{t(language, 'legalTerms')}</Text>
+              {' '}{t(language, 'andWord')}{' '}
+              <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } } as never)}>{t(language, 'legalPrivacy')}</Text>{t(language, 'agreeSuffix')}
+            </Text>
+          </>
         )}
         {msg ? <Text style={styles.msgText}>{msg}</Text> : null}
-        <Text style={styles.legal}>
-          {t(language, 'agreePrefix')}{' '}
-          <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } } as never)}>{t(language, 'legalTerms')}</Text>
-          {' '}{t(language, 'andWord')}{' '}
-          <Text style={styles.legalLink} onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } } as never)}>{t(language, 'legalPrivacy')}</Text>{t(language, 'agreeSuffix')}
-        </Text>
       </View>
     </View>
   );
@@ -130,6 +150,11 @@ const getStyles = (tokens: ReturnType<typeof useTokens>) => StyleSheet.create({
   tagline: { color: tokens.text, fontSize: tokens.font.lg, fontWeight: '700', textAlign: 'center' },
   bottom: { gap: 12, padding: tokens.space.md, paddingBottom: 24 },
   googleButton: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: tokens.border, borderRadius: 999, borderWidth: 1, flexDirection: 'row', gap: 10, justifyContent: 'center', paddingVertical: 14 },
+  disabledButton: { opacity: 0.5 },
+  checkboxRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 10, paddingVertical: 10 },
+  checkboxBox: { alignItems: 'center', borderColor: tokens.border, borderRadius: 8, borderWidth: 1, height: 22, justifyContent: 'center', width: 22 },
+  checkboxChecked: { backgroundColor: tokens.accent, borderColor: tokens.accent },
+  checkboxText: { color: tokens.text, flex: 1, fontSize: tokens.font.md },
   gMark: { alignItems: 'center', borderColor: '#1E1A16', borderRadius: 999, borderWidth: 1, height: 28, justifyContent: 'center', width: 28 },
   gLetter: { color: '#1E1A16', fontSize: 16, fontWeight: '800' },
   googleButtonText: { color: '#1E1A16', fontSize: tokens.font.md, fontWeight: '700' },
