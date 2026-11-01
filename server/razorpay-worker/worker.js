@@ -9,14 +9,14 @@
 // all, so any caller could pass any userId): the app sends its stored
 // Google ID token as `Authorization: Bearer <idToken>` on every
 // user-scoped call. The Worker verifies it before acting — RS256
-// signature against Google's JWKS, issuer, audience (the app's
-// Android OAuth client id, a PUBLIC identifier), expiry, and token
+// signature against Google's JWKS, issuer, audience (the Web
+// OAuth client id, a PUBLIC identifier), expiry, and token
 // sub === requested userId — and rate-limits per userId + endpoint.
 // The webhook path is unchanged (HMAC only, no Bearer token).
-// NOTE: the current sign-in config does not request an ID token
-// (GoogleSignin.configure has no webClientId), so a stored token may
-// be null until sign-in is configured to request one; the app fails
-// closed (no token = no Worker call) in that case.
+// NOTE: sign-in requests an ID token via webClientId (Web OAuth
+// client, 2026-11-01); the user must sign in again after updating so
+// a token with the new audience is stored. The app fails closed
+// (no token = no Worker call).
 //
 // MONTHLY SUBSCRIPTION (user order 2026-10-31, replaces the old
 // one-time $5 model): ₹199/month, INR. The price lives in the
@@ -78,7 +78,7 @@ function json(data, status = 200) {
 // by header kid, with one JWKS refetch on an unknown kid (rotation).
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const GOOGLE_ISSUERS = ['accounts.google.com', 'https://accounts.google.com'];
-const GOOGLE_AUDIENCE = '882528237595-uppqaeumchghusblf8akl6pu2oo4htjp.apps.googleusercontent.com';
+const GOOGLE_AUDIENCE = '882528237595-nv1i273dj68v1mr8itbgij2r59fb97mv.apps.googleusercontent.com';
 
 function base64urlDecode(s) {
   let t = s.replace(/-/g, '+').replace(/_/g, '/');

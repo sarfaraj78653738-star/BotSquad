@@ -17,6 +17,8 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 //   package: com.botsquad.app
 //   SHA-1: B8:24:49:51:32:71:66:65:28:50:85:B2:93:E8:E8:C6:5B:6A:89:A5
 //   client ID: 882528237595-uppqaeumchghusblf8akl6pu2oo4htjp.apps.googleusercontent.com
+//   Web OAuth client (server audience for Worker auth), created 2026-11-01
+//   client ID: 882528237595-nv1i273dj68v1mr8itbgij2r59fb97mv.apps.googleusercontent.com
 // The old Desktop client + browser/PKCE/redirect flow was ABANDONED
 // 2026-10-31 after four builds failed to return from the browser to
 // the app (redirect_uri_mismatch, then silent dismiss/restart loss);
@@ -45,9 +47,8 @@ export async function getGoogleUser(): Promise<GoogleUser | null> {
 }
 
 // Stored Google ID token for Worker calls (Bearer auth). Returns null
-// when no token was stored — note the current sign-in config does not
-// request an ID token (configure has no webClientId), so this is null
-// until sign-in is configured to request one; callers fail closed.
+// when no token was stored (e.g. signed in before webClientId was
+// configured — sign in again to store one); callers fail closed.
 export async function getGoogleIdToken(): Promise<string | null> {
   try {
     const raw = await SecureStore.getItemAsync(TOKENS_KEY);
@@ -82,7 +83,7 @@ export async function revokeGoogleAccess(): Promise<void> {
 // backs out of the account picker. Throws a plain message on failure
 // — the login screen shows it.
 export async function nativeSignIn(): Promise<GoogleUser | null> {
-  GoogleSignin.configure({ scopes: ['openid', 'email', 'profile'] });
+  GoogleSignin.configure({ scopes: ['openid', 'email', 'profile'], webClientId: '882528237595-nv1i273dj68v1mr8itbgij2r59fb97mv.apps.googleusercontent.com' });
   const playOk = await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   if (!playOk) throw new Error('Google Play Services is needed for sign-in.');
   const res = await GoogleSignin.signIn();
