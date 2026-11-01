@@ -32,7 +32,7 @@ import { requireHttpsUrl } from './mcp';
 export type AgentToolCall = { name: string; args: Record<string, unknown> };
 
 export const AGENT_TOOLS_PROMPT = `
-You are also an agent with tools, not only a chatbot. For ordinary questions, just answer normally with no tool use. When the user asks you to build, change, find, or check something in files or on the web, use tools. Emit each tool call as its own fenced block, and nothing else in that message except at most one short line before the block:
+You are also an agent with tools, not only a chatbot. For ordinary questions, just answer normally with no tool use. When the user asks you to build, change, find, or check something in files or on the web, use tools. Emit each tool call as its own fenced block, and nothing else in that message except at most one short line before the block. Never emit <dots_function_call> or any other tool syntax — only the fenced blocks above:
 \`\`\`tool
 {"name": "list_files", "args": {}}
 \`\`\`
@@ -61,7 +61,7 @@ Rules: never invent file contents you have not read; paths stay inside the works
 export const FILE_TOOL_NAMES = ['list_files', 'read_file', 'search_files', 'write_file', 'edit_file', 'delete_file', 'browser_read', 'download_repo', 'run_plugin'];
 
 export const BOT_FILE_TOOLS_PROMPT = `
-[WORKSPACE FILE TOOLS — you can also work with files in the phone's workspace, exactly like Main Chat, with the same approval rule. Emit each tool call as its own fenced block:
+[WORKSPACE FILE TOOLS — you can also work with files in the phone's workspace, exactly like Main Chat, with the same approval rule. Emit each tool call as its own fenced block. Never emit <dots_function_call> or any other tool syntax — only the fenced blocks:
 \`\`\`tool
 {"name": "write_file", "args": {"path": "index.html", "content": "..."}}
 \`\`\`
@@ -77,11 +77,89 @@ export const BOT_FILE_TOOLS_PROMPT = `
 - run_plugin {plugin}: run a plugin's JavaScript on this phone in the WebView sandbox — no host, no server. Give a plugin name, a github.com repo ("owner/name" or URL), or a workspace .js file. A repo is downloaded first if needed, then its entry file is found automatically (package.json main, index.js, main.js, plugin.js); a repo with only SKILL.md is installed as a skill instead of running. Runs ONLY after the user approves that exact run in chat.
 Rules: paths stay inside the workspace (no absolute paths, no ".."); one tool call per block; after each tool result, either emit the next tool block or give your final reply with no tool block. In your final reply, briefly list what you did (files created/changed, what to preview or export). You cannot run commands, servers, or tests on this phone, but you CAN download a public GitHub repo with download_repo and run a plugin's JavaScript with run_plugin; say so plainly if asked.]`;
 
+// Extract a balanced {...} JSON object starting at or after `start`
+// (brace-counting, string/escape aware, so nested objects and
+// multi-line JSON survive). Returns null when unbalanced.
+function extractBalancedJson(text: string, start: number): { json: string; end: number } | null {
+  const open = text.indexOf('{', start);
+  if (open === -1) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+    } else {
+      if (ch === '"') inStr = true;
+      else if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) return { json: text.slice(open, i + 1), end: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+// The dots model family (dots-studio) emits its native tool format
+// instead of the prompted ```tool fenced blocks (user report
+// 2026-11-01: raw <dots_function_call> text shown as the reply and
+// nothing executed — the parser found no fenced blocks, so the loop
+// broke immediately and the stripper removed nothing). Normalize
+// that format into fenced blocks so the existing parser + stripper
+// handle it: a dots block becomes exactly what the model was asked
+// to emit. In dots form the JSON after '<' IS the args object, so it
+// is wrapped as {name, args}. A malformed dots block still converts
+// (parse ignores it, strip removes it), exactly like a malformed
+// fenced block — raw syntax is never shown.
+function normalizeDotsCalls(reply: string): string {
+  let out = '';
+  let rest = reply;
+  for (;;) {
+    const start = rest.indexOf('<dots_function_call>');
+    if (start === -1) { out += rest; break; }
+    out += rest.slice(0, start);
+    const afterTag = rest.slice(start + '<dots_function_call>'.length);
+    const inv = afterTag.match(/<invoke\s+name="([^"]+)">/);
+    if (!inv || inv.index === undefined) {
+      // Unrecognizable dots tag — drop it and continue, never show it.
+      rest = afterTag;
+      continue;
+    }
+    const argsStart = inv.index + inv[0].length;
+    const afterInvoke = afterTag.slice(argsStart);
+    const lt = afterInvoke.indexOf('<');
+    let jsonText = '';
+    let end = argsStart;
+    if (lt !== -1) {
+      const ext = extractBalancedJson(afterInvoke, lt);
+      if (ext) {
+        jsonText = ext.json;
+        end = argsStart + ext.end;
+      } else {
+        jsonText = afterInvoke.slice(lt + 1).trim();
+        end = afterTag.length;
+      }
+    }
+    // Skip trailing closers: '>', '</invoke>', '</dots_function_call>'.
+    const tail = afterTag.slice(end).replace(/^\s*(?:>\s*)?(?:<\/invoke>\s*)?(?:<\/dots_function_call>\s*)?/, '');
+    let args: unknown = {};
+    try { args = JSON.parse(jsonText) as unknown; } catch { args = {}; }
+    out += '```tool\n' + JSON.stringify({ name: inv[1], args: (args && typeof args === 'object' ? args : {}) }) + '\n```';
+    rest = tail;
+  }
+  return out;
+}
+
 export function parseToolCalls(reply: string): AgentToolCall[] {
   const calls: AgentToolCall[] = [];
   const re = /```tool\s*\n([\s\S]*?)```/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(reply))) {
+  const normalized = normalizeDotsCalls(reply);
+  while ((m = re.exec(normalized))) {
     try {
       const obj = JSON.parse(m[1]) as { name?: unknown; args?: unknown };
       if (obj && typeof obj.name === 'string') {
@@ -93,7 +171,7 @@ export function parseToolCalls(reply: string): AgentToolCall[] {
 }
 
 export function stripToolBlocks(reply: string): string {
-  return reply.replace(/```tool\s*\n[\s\S]*?```/g, '').trim();
+  return normalizeDotsCalls(reply).replace(/```tool\s*\n[\s\S]*?```/g, '').trim();
 }
 
 function argString(args: Record<string, unknown>, key: string): string {
