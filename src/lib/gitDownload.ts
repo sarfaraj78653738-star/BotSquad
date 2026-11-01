@@ -68,14 +68,35 @@ function toBase64(data: Uint8Array): string {
   return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('base64');
 }
 
+// Map a file-not-found failure to a proper ENOENT-coded error (fix
+// 2026-11-01): expo-file-system throws a native FileNotFoundException
+// whose error object carries NO `.code`, so isomorphic-git cannot
+// recognise a missing file. Git treats several files as optional —
+// a fresh single-branch clone has no `.git/packed-refs` at all — and
+// isomorphic-git handles that ONLY by catching an ENOENT-coded error.
+// Without the code, a missing optional file is fatal instead of
+// empty, and the clone dies reading packed-refs (user screenshot
+// 2026-11-01: readAsStringAsync rejected, packed-refs ENOENT).
+function asEnoent(e: unknown): Error & { code?: string } {
+  const err = (e instanceof Error ? e : new Error(String(e))) as Error & { code?: string };
+  if (err.code !== 'ENOENT' && /ENOENT|FileNotFound|No such file or directory/i.test(err.message ?? '')) {
+    err.code = 'ENOENT';
+  }
+  return err;
+}
+
 const promises = {
   async readFile(filePath: string, options?: unknown): Promise<string | Buffer> {
     const encoding = typeof options === 'string' ? options : (options as { encoding?: string } | undefined)?.encoding;
-    if (encoding === 'utf8' || encoding === 'utf-8') {
-      return FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.UTF8 });
+    try {
+      if (encoding === 'utf8' || encoding === 'utf-8') {
+        return await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.UTF8 });
+      }
+      const b64 = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+      return Buffer.from(b64, 'base64');
+    } catch (e) {
+      throw asEnoent(e);
     }
-    const b64 = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
-    return Buffer.from(b64, 'base64');
   },
   async writeFile(filePath: string, data: string | Uint8Array, options?: unknown): Promise<void> {
     await ensureParent(filePath);
@@ -90,7 +111,12 @@ const promises = {
     await FileSystem.deleteAsync(filePath, { idempotent: true });
   },
   async readdir(filePath: string, options?: unknown): Promise<string[] | { name: string; isFile: () => boolean; isDirectory: () => boolean }[]> {
-    const names = await FileSystem.readDirectoryAsync(filePath);
+    let names: string[];
+    try {
+      names = await FileSystem.readDirectoryAsync(filePath);
+    } catch (e) {
+      throw asEnoent(e);
+    }
     const withTypes = (options as { withFileTypes?: boolean } | undefined)?.withFileTypes === true;
     if (!withTypes) return names;
     const out: { name: string; isFile: () => boolean; isDirectory: () => boolean }[] = [];
@@ -115,7 +141,11 @@ const promises = {
     return statLike(filePath);
   },
   async readlink(filePath: string): Promise<string> {
-    return FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.UTF8 });
+    try {
+      return await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.UTF8 });
+    } catch (e) {
+      throw asEnoent(e);
+    }
   },
   async symlink(target: string, filePath: string): Promise<void> {
     await ensureParent(filePath);
