@@ -172,7 +172,12 @@ export function sanitizeHistoryForModel(history: { role: string; text: string }[
 
 export function parseToolCalls(reply: string): AgentToolCall[] {
   const calls: AgentToolCall[] = [];
-  const re = /```tool\s*\n([\s\S]*?)```/g;
+  // Tolerance (fix 2026-11-01): the prompt shows the JSON on the line
+  // after ```tool, but models also emit it on the SAME line
+  // ("```tool {...}```" — user screenshot 2026-11-01). The old regex
+  // required a newline after ```tool, so a single-line block parsed
+  // to nothing and showed as raw text. \s* accepts either layout.
+  const re = /```tool\s*([\s\S]*?)```/g;
   let m: RegExpExecArray | null;
   const normalized = normalizeDotsCalls(reply);
   while ((m = re.exec(normalized))) {
@@ -187,7 +192,9 @@ export function parseToolCalls(reply: string): AgentToolCall[] {
 }
 
 export function stripToolBlocks(reply: string): string {
-  return normalizeDotsCalls(reply).replace(/```tool\s*\n[\s\S]*?```/g, '').trim();
+  // Same single-line tolerance as parseToolCalls: strip a block
+  // whether its JSON sits on the ```tool line or the next line.
+  return normalizeDotsCalls(reply).replace(/```tool\s*[\s\S]*?```/g, '').trim();
 }
 
 function argString(args: Record<string, unknown>, key: string): string {
@@ -397,7 +404,10 @@ export async function executeAgentTool(
         const stats = await cloneGitHubRepo(`${dir}${rel}`, parsed.url);
         return `Downloaded ${parsed.owner}/${parsed.name} into ${rel} (${stats.files} files, ${stats.bytes} bytes). Sample: ${stats.sample.join(', ') || '(empty)'}.`;
       } catch (e) {
-        return `Error: could not download ${parsed.owner}/${parsed.name} (${e instanceof Error ? e.message : 'download failed'}). The repo may not exist, be private, or be too large for this phone.`;
+        // Report the EXACT clone error (fix 2026-11-01): the old text
+        // let the model guess ("too large", "missing .git") instead of
+        // quoting the real failure, so the cause stayed hidden.
+        return `Error: clone failed for ${parsed.owner}/${parsed.name}. Exact error: ${e instanceof Error ? e.message : 'download failed'}. Report this exact error to the user; do not guess a cause.`;
       }
     }
     case 'run_plugin': {
@@ -429,7 +439,7 @@ export async function executeAgentTool(
             const dir = await workspaceDir();
             await cloneGitHubRepo(`${dir}${rel}`, ref.url);
           } catch (e) {
-            return `Error: could not download ${ref.owner}/${ref.name} (${e instanceof Error ? e.message : 'download failed'}).`;
+            return `Error: clone failed for ${ref.owner}/${ref.name}. Exact error: ${e instanceof Error ? e.message : 'download failed'}. Report this exact error to the user; do not guess a cause.`;
           }
         }
         try {
